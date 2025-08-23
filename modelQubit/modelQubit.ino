@@ -10,12 +10,12 @@ s (sine) and c(cosine) and observes voltages x and y, which will "collapse" to e
 
 
 // Set pin numbers
-const int cPin = A0;
-const int sPin = A1;
-const int thetPin = A2;
-const int phiPin = A3;
-const int xPin = A4;
-const int yPin = A5;
+const int cPin = 6;
+const int sPin = 5;
+const int thetPin = A1;
+const int phiPin = A0;
+const int xPin = A2;
+const int yPin = A3;
 
 // Other parameters
 const int dt = 100; //The number of milliseconds between consecutive readings
