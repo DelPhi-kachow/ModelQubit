@@ -18,6 +18,7 @@ const int xPin = A4;
 const int yPin = A5;
 
 // Other parameters
+const int dt = 100; //The number of milliseconds between consecutive readings
 
 // Measurement tracking
 float c = 0;
@@ -106,6 +107,14 @@ void measure() {
   tellState();
 }
 
+// Take a suite of measurements at regular intervals
+void measurements(int N) {
+  for (int i = 0; i < N; i++) {
+    measure();
+    delay(dt);
+  }
+}
+
 // Runs once when device turned on
 void setup() {
   // Setup pins
@@ -124,11 +133,14 @@ void loop() {
   // Cycle through c/s settings
 
     // At beginning of measurement cycle, change c/s
+    setAxis_rel(PI / 2.0);
 
     // Turn measurement on
+    measureOn();
+    measurements(20); //Record
 
     // Turn measurement off
-
-  // All the while, record data
+    measureOff(); 
+    measurements(20); //Record
 
 }
