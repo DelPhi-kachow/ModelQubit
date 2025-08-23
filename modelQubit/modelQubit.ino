@@ -50,8 +50,12 @@ void setAxis_rel(float angle) {
 void measureOn() {
   // Turn on the measurement coupling
   on = true;
-  analogWrite(cPin, int(255 * c));
-  analogWrite(sPin, int(255 * s));
+
+  // The scaling is a bit weird because we need to output negative voltages too
+  int cOut = int( 255.0 * ((c + 1.0) / 2.0));
+  int sOut = int( 255.0 * ((s + 1.0) / 2.0));
+  analogWrite(cPin, cOut);
+  analogWrite(sPin, sOut);
 }
 
 void measureOff() {
@@ -65,11 +69,18 @@ void measureOff() {
 void readState() {
   // timer
   t = millis() / 1000.0;
-  // analog reads
-  theta = analogRead(thetPin) / 1023;
-  phi = analogRead(phiPin) / 1023;
-  x = analogRead(xPin) / 1023;
-  y = analogRead(yPin) / 1023;
+  // analog reads as fraction of max voltage
+  float thetaRaw = analogRead(thetPin) / 1023.0;
+  float phiRaw = analogRead(phiPin) / 1023.0;
+  float xRaw = analogRead(xPin) / 1023.0;
+  float yRaw = analogRead(yPin) / 1023.0;
+
+  //Convert raw readings to appropriate coordinates
+  //A lot of the complexity here is because there is a level shifting circuit to deal with negative voltages
+  theta = 2.0 * thetaRaw - 1.0;
+  phi = phiRaw;
+  x = 2.0 * xRaw - 1.0;
+  y = 2.0 * yRaw - 1.0;
 }
 
 // Print state to serial
@@ -82,21 +93,18 @@ void tellState() {
     Serial.print(state[i]);
     Serial.print(", ");
   }
-
-  // Take a measurement
-  void measure() {
-    //Read state
-    readState();
-
-    //Report to serial
-    tellState();
-  }
-
   //End line
   Serial.println();
 }
 
+// Take a measurement
+void measure() {
+  //Read state
+  readState();
 
+  //Report to serial
+  tellState();
+}
 
 // Runs once when device turned on
 void setup() {
@@ -106,7 +114,7 @@ void setup() {
   Serial.begin(9600);
 
   // Print metadata
-  Serial.println("Voltages are recorded as fractions of 5V")
+  Serial.println("Voltages are recorded as fractions of 5V");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }
