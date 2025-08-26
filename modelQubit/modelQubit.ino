@@ -140,6 +140,25 @@ void angleSuite() {
   }
 }
 
+// Perform the full suite of trials for all angles
+void fullSuite(){
+  //Ensure that each angle suite ends on a distinct value of phi
+  int rem = (m * tau) % T;
+  int desiredRem = T / N;
+
+  //If the timing is off, calculate an extra delay time after a suite of trials
+  int offset = desiredRem - rem;
+
+  //Perform all trials
+  for(int i; i < N; i++) {
+    //Perform an angle suite
+    angleSuite();
+
+    //Add extra delay
+    delay(offset);
+  }
+}
+
 // Runs once when device turned on
 void setup() {
   // Setup pins
@@ -155,5 +174,5 @@ void setup() {
 
 // Runs continuously after setup
 void loop() {
-  angleSuite();
+  fullSuite();
 }
