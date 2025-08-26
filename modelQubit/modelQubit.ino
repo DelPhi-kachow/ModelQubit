@@ -18,7 +18,11 @@ const int xPin = A2;
 const int yPin = A3;
 
 // Other parameters
-const int dt = 100; //The number of milliseconds between consecutive readings
+const int T = 5000; //Period of phi oscillation, in milliseconds
+const int tau = 2000; //Time for a single trial, in milliseconds
+const int dt = int(tau / 40); //The number of milliseconds between consecutive readings
+const int N = 100; //Number of trials for each angle. Sets precision of measured probabilities.
+const int m = 10; //Number of angles to measure probabilities on.
 
 // Measurement tracking
 float c = 0;
@@ -115,6 +119,27 @@ void measurements(int N) {
   }
 }
 
+// Perform an individual trial for a parameter set
+void trial() {
+  // Turn measurement on
+  measureOn();
+  measurements(20); //Record
+
+  // Turn measurement off
+  measureOff(); 
+  measurements(20); //Record
+}
+
+// Perform trials for each angle
+void angleSuite() {
+  //Iterate through relative angles
+  float delThet = PI / (m - 1);
+  for (float thet = 0; thet <= PI; thet += delThet){
+    setAxis_rel(thet);
+    trial();
+  }
+}
+
 // Runs once when device turned on
 void setup() {
   // Setup pins
@@ -133,14 +158,5 @@ void loop() {
   // Cycle through c/s settings
 
     // At beginning of measurement cycle, change c/s
-    setAxis_rel(PI / 2.0);
-
-    // Turn measurement on
-    measureOn();
-    measurements(20); //Record
-
-    // Turn measurement off
-    measureOff(); 
-    measurements(20); //Record
-
+    angleSuite();
 }
