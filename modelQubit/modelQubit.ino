@@ -43,8 +43,8 @@ void setAxis_abs(float angle) {
 
 void setAxis_rel(float angle) {
   //Set c and s relative to x and y, by angle in radians
-  int cPrime = cos(angle);
-  int sPrime = sin(angle);
+  float cPrime = cos(angle);
+  float sPrime = sin(angle);
 
   //angle addition
   c = (x * cPrime) - (y * sPrime);
@@ -66,8 +66,8 @@ void measureOn() {
 void measureOff() {
   //turn off the measurement coupling
   on = false;
-  analogWrite(cPin, 0);
-  analogWrite(sPin, 0);
+  analogWrite(cPin, 128);
+  analogWrite(sPin, 128);
 }
 
 // Record state to variables
@@ -133,8 +133,8 @@ void trial() {
 // Perform trials for each angle
 void angleSuite() {
   //Iterate through relative angles
-  float delThet = PI / (m - 1);
-  for (float thet = 0; thet <= PI; thet += delThet){
+  for (int i = 0; i < m; i++){
+    float thet = i * ((PI / 2.0) / (m - 1.0));
     setAxis_rel(thet);
     trial();
   }
@@ -155,8 +155,5 @@ void setup() {
 
 // Runs continuously after setup
 void loop() {
-  // Cycle through c/s settings
-
-    // At beginning of measurement cycle, change c/s
-    angleSuite();
+  angleSuite();
 }
