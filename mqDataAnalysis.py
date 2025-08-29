@@ -59,8 +59,46 @@ SORT THROUGH DATA, COMPUTE STATISTICS
 '''
 
 #Count how many distinct measurements were taken
+count = 0
+offIndices = []
+onIndices = []
+#Iterate through on/off
+for i, elem in enumerate(of):
+    #Every time of switches from on to off, 
+    # a measurement has just ended
+    if elem == False:
+        if of[i-1] == True:
+            count += 1 #Count the measurement
+            offIndices.append(i) #Record the measurement end
+    
+    #Alternatively, record when a measurement begins
+    if elem == True:
+        if of[i-1] == False:
+            onIndices.append(i)
+
+#Normalize a sine-cosine pair
+def normPair(cIn, sIn):
+    #Ensure normalization
+    csMag = np.sqrt((cIn)**2 + (sIn)**2)
+    ci = cIn / csMag
+    si = sIn / csMag
+    return(ci, si)
 
 #For each measurement, what was the relative angle between (x, y) and (c, s)?
+def rangle(index):
+    #Ensure normalization
+    ci, si = normPair(c[index], s[index])
+    xi, yi = normPair(x[index], y[index])
+    
+    #Find relative sine and cosine
+    sr = xi * si + yi * ci
+    cr = xi * ci - yi * si
+    
+    #Use arctan to find relative angle
+    angle = np.arctan2(sr, cr)
+    return(angle)
+
+rangles = np.array([rangle(index) for index in onIndices])
 
 #Did we measure up or down on this axis?
 
