@@ -58,6 +58,14 @@ y = np.array(y)
 SORT THROUGH DATA, COMPUTE STATISTICS
 '''
 
+#Count how many distinct measurements were taken
+
+#For each measurement, what was the relative angle between (x, y) and (c, s)?
+
+#Did we measure up or down on this axis?
+
+#Bin the relative angles and compute measured probabilities
+
 '''
 PLOT MEASURED VS IDEAL QUBIT
 '''
