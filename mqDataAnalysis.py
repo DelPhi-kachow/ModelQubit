@@ -60,21 +60,32 @@ SORT THROUGH DATA, COMPUTE STATISTICS
 
 #Count how many distinct measurements were taken
 count = 0
-offIndices = []
-onIndices = []
+mIndices = []
+incycle = False
+startdex = 0
+enddex = 0
 #Iterate through on/off
 for i, elem in enumerate(of):
-    #Every time of switches from on to off, 
-    # a measurement has just ended
-    if elem == False:
-        if of[i-1] == True:
-            count += 1 #Count the measurement
-            offIndices.append(i) #Record the measurement end
-    
-    #Alternatively, record when a measurement begins
-    if elem == True:
-        if of[i-1] == False:
-            onIndices.append(i)
+    #print(i, elem)
+    #Don't start looking until measurement activates
+    if (c[i] == 0.0) and (s[i] == 0.0):
+        continue
+
+    #Measurement cycles begin and end when of switches off
+    if (elem == False) and (of[i-1] == True):
+        #For the first cycle,
+        if incycle == False:
+            startdex = i
+            incycle = True
+        #For subsequent cycles
+        else:
+            #End and record the previous cycle
+            enddex = i
+            count += 1
+            mIndices.append( (startdex, enddex) )
+            
+            #Begin the next cycle
+            startdex = i
 
 #Normalize a sine-cosine pair
 def normPair(cIn, sIn):
@@ -98,7 +109,7 @@ def rangle(index):
     angle = np.arctan2(sr, cr)
     return(angle)
 
-rangles = np.array([rangle(index) for index in onIndices])
+rangles = np.array([rangle(dex[0]) for dex in mIndices])
 
 #Did we measure up or down on this axis?
 
