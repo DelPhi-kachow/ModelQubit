@@ -71,8 +71,8 @@ for i, elem in enumerate(of):
     if (c[i] == 0.0) and (s[i] == 0.0):
         continue
 
-    #Measurement cycles begin and end when of switches off
-    if (elem == False) and (of[i-1] == True):
+    #Measurement cycles begin and end when of switches on
+    if (elem == True) and (of[i-1] == False):
         #For the first cycle,
         if incycle == False:
             startdex = i
@@ -102,8 +102,8 @@ def rangle(index):
     xi, yi = normPair(x[index], y[index])
     
     #Find relative sine and cosine
-    sr = xi * si + yi * ci
-    cr = xi * ci - yi * si
+    sr = yi * ci - xi * si
+    cr = xi * ci + yi * si
     
     #Use arctan to find relative angle
     angle = np.arctan2(sr, cr)
@@ -112,6 +112,37 @@ def rangle(index):
 rangles = np.array([rangle(dex[0]) for dex in mIndices])
 
 #Did we measure up or down on this axis?
+def updown(index, bound = 0.5):
+    #Ensure normalization
+    ci, si = normPair(c[index], s[index])
+    xi, yi = normPair(x[index], y[index])
+    
+    #Find relative cosine
+    cr = xi * ci + yi * si
+    
+    #Judge up or down within bound
+    if cr > (1-bound):
+        return 1
+    elif cr < -(1-bound):
+        return -1
+    #Return 0 if inconclusive
+    else:
+        return 0
+
+#Try everything out for a specific measurement
+startdex = mIndices[1][0]
+enddex = mIndices[1][1]
+
+for i in range(startdex, enddex):
+    print(of[i], c[i], s[i], x[i], y[i], updown(i))
+    
+mmts = np.array([updown(i[1]-1) for i in mIndices])
+print(mmts)
+
+#I'm seeing a couple 0s, which is not good
+#Let's see if we can figure out why
+#I need to locate and plot one of these
+
 
 #Bin the relative angles and compute measured probabilities
 
