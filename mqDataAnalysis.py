@@ -80,7 +80,7 @@ for i, elem in enumerate(of):
         #For subsequent cycles
         else:
             #End and record the previous cycle
-            enddex = i
+            enddex = i-1
             count += 1
             mIndices.append( (startdex, enddex) )
             
@@ -130,13 +130,13 @@ def updown(index, bound = 0.5):
         return 0
 
 #Try everything out for a specific measurement
-startdex = mIndices[1][0]
-enddex = mIndices[1][1]
+startdex = mIndices[81][0]
+enddex = mIndices[81][1]
 
 for i in range(startdex, enddex):
     print(of[i], c[i], s[i], x[i], y[i], updown(i))
     
-mmts = np.array([updown(i[1]-1) for i in mIndices])
+mmts = np.array([updown(i[1]) for i in mIndices])
 print(mmts)
 
 #I'm seeing a couple 0s, which is not good
@@ -153,4 +153,36 @@ PLOT MEASURED VS IDEAL QUBIT
 '''
 ANIMATIONS
 '''
+
+#Plotting csxy state
+fig, ax = plt.subplots(figsize = [6., 6.])
+# Move the left and bottom spines to x = 0 and y = 0, respectively.
+ax.spines[["left", "bottom"]].set_position(("data", 0))
+# Hide the top and right spines.
+ax.spines[["top", "right"]].set_visible(False)
+
+# Draw arrows (as black triangles: ">k"/"^k") at the end of the axes.  In each
+# case, one of the coordinates (0) is a data coordinate (i.e., y = 0 or x = 0,
+# respectively) and the other one (1) is an axes coordinate (i.e., at the very
+# right/top of the axes).  Also, disable clipping (clip_on=False) as the marker
+# actually spills out of the Axes.
+ax.plot(1, 0, ">k", transform=ax.get_yaxis_transform(), clip_on=False)
+ax.plot(0, 1, "^k", transform=ax.get_xaxis_transform(), clip_on=False)
+#Hide axis numbers, draw grid
+ax.tick_params(grid_alpha = 0.5, 
+               labelsize = 0.)
+
+#Draw the unit circle
+unitC = plt.Circle((0., 0.), 1., fill = False, ec = 'k')
+ax.add_patch(unitC)
+
+#Plot an xy point
+ax.scatter(x[100], y[100])
+
+#Draw the measurement axis
+ax.plot([0., c[100]], [0., s[100]], color = 'orange')
+ax.plot([0., -c[100]], [0., -s[100]], color = 'orange', ls = '--')
+ax.scatter(c[100], s[100], color = 'orange', marker = 'o', fc = 'white')
+
+
 
