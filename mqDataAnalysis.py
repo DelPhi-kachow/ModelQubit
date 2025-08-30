@@ -154,7 +154,6 @@ PLOT MEASURED VS IDEAL QUBIT
 '''
 ANIMATIONS
 '''
-
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
 # Move the left and bottom spines to x = 0 and y = 0, respectively.
@@ -191,7 +190,7 @@ ind = plt.Circle((0.95, 0.95), 0.05, color = 'red')
 ax.add_patch(ind)
 
 #Function for animating a frame
-def animate(i):
+def step(i):
     #Move the xy point to the proper location
     xy.set_data(
         [x[i]], 
@@ -217,14 +216,14 @@ def animate(i):
     
     return (xy, axup, axdown, axtip, ind)
 
-video = ani.FuncAnimation(fig, animate,
-                          repeat = True, 
-                          frames = range(400, 560),
-                          interval = 100,
-                          blit = True)
-#To save the animation using Pillow as a gif
-writer = ani.PillowWriter(fps=15,
-                          bitrate=1800)
-video.save('scatter.gif', writer=writer)
-plt.show()
 
+video = ani.FuncAnimation(fig, step,
+                          repeat = True, 
+                          frames = len(x),
+                          interval = 50,
+                          blit = True)
+#fig.show()
+
+#To save the animation using Pillow as a gif
+writer = ani.PillowWriter(fps=20)
+video.save('fullTest.gif', writer=writer)
