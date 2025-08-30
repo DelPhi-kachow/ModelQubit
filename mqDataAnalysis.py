@@ -155,7 +155,7 @@ ANIMATIONS
 '''
 
 #Plotting csxy state
-fig, ax = plt.subplots(figsize = [6., 6.])
+fig, ax = plt.subplots(figsize = [3., 3.])
 # Move the left and bottom spines to x = 0 and y = 0, respectively.
 ax.spines[["left", "bottom"]].set_position(("data", 0))
 # Hide the top and right spines.
@@ -170,6 +170,7 @@ ax.plot(1, 0, ">k", transform=ax.get_yaxis_transform(), clip_on=False)
 ax.plot(0, 1, "^k", transform=ax.get_xaxis_transform(), clip_on=False)
 #Hide axis numbers, draw grid
 ax.tick_params(grid_alpha = 0.5, 
+               labelcolor = 'none',
                labelsize = 0.)
 
 #Draw the unit circle
@@ -177,12 +178,16 @@ unitC = plt.Circle((0., 0.), 1., fill = False, ec = 'k')
 ax.add_patch(unitC)
 
 #Plot an xy point
-ax.scatter(x[100], y[100])
+ax.scatter(x[1000], y[1000])
 
 #Draw the measurement axis
-ax.plot([0., c[100]], [0., s[100]], color = 'orange')
-ax.plot([0., -c[100]], [0., -s[100]], color = 'orange', ls = '--')
-ax.scatter(c[100], s[100], color = 'orange', marker = 'o', fc = 'white')
+ax.plot([0., c[1000]], [0., s[1000]], color = 'orange')
+ax.plot([0., -c[1000]], [0., -s[1000]], color = 'orange', ls = '--')
+ax.scatter(c[1000], s[1000], color = 'orange', marker = 'o', fc = 'white')
+
+#Indicator for measuring
+ind = plt.Circle((0.95, 0.95), 0.05, color = 'red')
+ax.add_patch(ind)
 
 
 
