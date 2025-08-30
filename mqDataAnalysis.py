@@ -12,6 +12,7 @@ show via plots that it properly recreates the statistics of a qubit.
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as ani
 
 #Setup variables
 fname = 'modelQubit_08-25-2025_230700.log'
@@ -178,16 +179,52 @@ unitC = plt.Circle((0., 0.), 1., fill = False, ec = 'k')
 ax.add_patch(unitC)
 
 #Plot an xy point
-ax.scatter(x[1000], y[1000])
+xy, = ax.plot([x[1000]], [y[1000]], marker = 'o')
 
 #Draw the measurement axis
-ax.plot([0., c[1000]], [0., s[1000]], color = 'orange')
-ax.plot([0., -c[1000]], [0., -s[1000]], color = 'orange', ls = '--')
-ax.scatter(c[1000], s[1000], color = 'orange', marker = 'o', fc = 'white')
+axup, = ax.plot([0., c[1000]], [0., s[1000]], color = 'orange')
+axdown, = ax.plot([0., -c[1000]], [0., -s[1000]], color = 'orange', ls = '--')
+axtip, = ax.plot(c[1000], s[1000], color = 'orange', marker = 'o', mfc = 'white')
 
 #Indicator for measuring
 ind = plt.Circle((0.95, 0.95), 0.05, color = 'red')
 ax.add_patch(ind)
 
+#Function for animating a frame
+def animate(i):
+    #Move the xy point to the proper location
+    xy.set_data(
+        [x[i]], 
+        [y[i]]
+        )
+    
+    #Move the measurement axis to the proper location
+    axup.set_data(
+        [0., c[i]], 
+        [0., s[i]]
+        )
+    axdown.set_data(
+        [0., -c[i]],
+        [0., -s[i]]
+        )
+    axtip.set_data(
+        [c[i]],
+        [s[i]]
+        )
 
+    #Turn the indicator on/off
+    ind.set(visible = of[i])
+    
+    return (xy, axup, axdown, axtip, ind)
+
+video = ani.FuncAnimation(fig, animate,
+                          repeat = True, 
+                          frames = range(400, 560),
+                          interval = 100,
+                          blit = True)
+#To save the animation using Pillow as a gif
+writer = ani.PillowWriter(fps=15,
+                          bitrate=1800)
+video.save('scatter.gif', writer=writer)
+plt.show()
 
