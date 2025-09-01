@@ -143,7 +143,32 @@ print(mmts)
 #I'm seeing a couple 0s, which is not good
 #Let's see if we can figure out why
 #I need to locate and plot one of these
+'''
+After doing the plotting, it seems clear that (x,y) was on its way to the 
+expected location, but the measurement ended too early. To see how often this
+happened, I can compute the expected measurement from theta and see how often
+the test had enough time.
+'''
 
+#Time average theta during a trial
+theets = np.array([
+    np.average(th[mIndices[i][0] : mIndices[i][1]]) 
+    for i in range(len(mIndices))
+    ])
+#The measurement is expected to converge to the sign of theta
+expectation = np.sign(theets)
+print(expectation)
+
+#How often was that the case?
+deviation = mmts - expectation
+print(deviation)
+failFreq = np.sum(deviation / 2.) / len(deviation)
+print(failFreq)
+
+#This is over a 30% failure rate!
+#I need to double check some of the identified failures in animation
+#It does indeed look like many tests did not have enough time under measurement
+#I'll need to redo the tests with more measurement time
 
 #Bin the relative angles and compute measured probabilities
 
@@ -153,6 +178,7 @@ PLOT MEASURED VS IDEAL QUBIT
 
 '''
 ANIMATIONS
+'''
 '''
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
@@ -215,6 +241,7 @@ def step(i):
     ind.set(visible = of[i])
     
     return (xy, axup, axdown, axtip, ind)
+'''
 
 '''
 #Animation of full trial
@@ -232,16 +259,18 @@ video.save('fullTest.gif', writer=writer)
 
 '''
 #Animation of a single test, where neither up or down was measured
+start = mIndices[10][0]
+end = mIndices[10][1]
 video = ani.FuncAnimation(fig, step,
                           repeat = True, 
-                          frames = range(startdex - 40, enddex + 40),
+                          frames = range(start - 40, end + 40),
                           interval = 50,
                           blit = True)
 #fig.show()
 
 #To save the animation using Pillow as a gif
 writer = ani.PillowWriter(fps=20)
-video.save('weirdTest.gif', writer=writer)
+video.save('weirdTest4.gif', writer=writer)
 
 #It's clear that it was on its way to the expected state, but the measurement
 # period ended too early.
