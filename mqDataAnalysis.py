@@ -216,7 +216,8 @@ def step(i):
     
     return (xy, axup, axdown, axtip, ind)
 
-
+'''
+#Animation of full trial
 video = ani.FuncAnimation(fig, step,
                           repeat = True, 
                           frames = len(x),
@@ -227,3 +228,21 @@ video = ani.FuncAnimation(fig, step,
 #To save the animation using Pillow as a gif
 writer = ani.PillowWriter(fps=20)
 video.save('fullTest.gif', writer=writer)
+'''
+
+'''
+#Animation of a single test, where neither up or down was measured
+video = ani.FuncAnimation(fig, step,
+                          repeat = True, 
+                          frames = range(startdex - 40, enddex + 40),
+                          interval = 50,
+                          blit = True)
+#fig.show()
+
+#To save the animation using Pillow as a gif
+writer = ani.PillowWriter(fps=20)
+video.save('weirdTest.gif', writer=writer)
+
+#It's clear that it was on its way to the expected state, but the measurement
+# period ended too early.
+'''
