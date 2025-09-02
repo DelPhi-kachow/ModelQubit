@@ -18,11 +18,18 @@ const int xPin = A2;
 const int yPin = A3;
 
 // Other parameters
-const int T = 5000; //Period of phi oscillation, in milliseconds
-const int tau = 2000; //Time for a single trial, in milliseconds
-const int dt = int(tau / 40); //The number of milliseconds between consecutive readings
+const long T = 20000; //Period of phi oscillation, in milliseconds
+const long tau = 8000; //Time for a single trial, in milliseconds
+const int dt = 100; //The number of milliseconds between consecutive readings
 const int N = 100; //Number of trials for each angle. Sets precision of measured probabilities.
 const int m = 10; //Number of angles to measure probabilities on.
+
+//Ensure that each angle suite ends on a distinct value of phi
+const long rem = (m * tau) % T;
+const long desiredRem = T / N;
+
+//If the timing is off, calculate an extra delay time after a suite of trials
+const long offset = desiredRem - rem;
 
 // Measurement tracking
 float c = 0;
@@ -123,7 +130,7 @@ void measurements(int N) {
 void trial() {
   // Turn measurement on
   measureOn();
-  measurements(20); //Record
+  measurements(60); //Record
 
   // Turn measurement off
   measureOff(); 
@@ -142,13 +149,6 @@ void angleSuite() {
 
 // Perform the full suite of trials for all angles
 void fullSuite(){
-  //Ensure that each angle suite ends on a distinct value of phi
-  int rem = (m * tau) % T;
-  int desiredRem = T / N;
-
-  //If the timing is off, calculate an extra delay time after a suite of trials
-  int offset = desiredRem - rem;
-
   //Perform all trials
   for(int i; i < N; i++) {
     //Perform an angle suite
