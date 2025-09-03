@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = 'modelQubit_08-25-2025_230700.log'
+fname = 'modelQubit_09-01-2025_194920.log'
 
 '''
 TAKE IN THE DATA
@@ -134,11 +134,11 @@ def updown(index, bound = 0.5):
 startdex = mIndices[81][0]
 enddex = mIndices[81][1]
 
-for i in range(startdex, enddex):
-    print(of[i], c[i], s[i], x[i], y[i], updown(i))
+#for i in range(startdex, enddex):
+    #print(of[i], c[i], s[i], x[i], y[i], updown(i))
     
 mmts = np.array([updown(i[1]) for i in mIndices])
-print(mmts)
+#print(mmts)
 
 #I'm seeing a couple 0s, which is not good
 #Let's see if we can figure out why
@@ -157,18 +157,24 @@ theets = np.array([
     ])
 #The measurement is expected to converge to the sign of theta
 expectation = np.sign(theets)
-print(expectation)
+#print(expectation)
 
 #How often was that the case?
 deviation = mmts - expectation
-print(deviation)
+#print(deviation)
 failFreq = np.sum(deviation / 2.) / len(deviation)
-print(failFreq)
+#print(failFreq)
 
 #This is over a 30% failure rate!
 #I need to double check some of the identified failures in animation
 #It does indeed look like many tests did not have enough time under measurement
 #I'll need to redo the tests with more measurement time
+#Okay, I added more time, but now the failure rate is still about 13%
+#Let's double check that the current failures are still the same sort of thing
+fails = np.nonzero(deviation)
+#print(fails)
+#Animating a few of these, and it looks like now we're seeing the measurement
+# go on long enough that the sign of theta is changing. I think this is fine now.
 
 #Bin the relative angles and compute measured probabilities
 
@@ -179,7 +185,7 @@ PLOT MEASURED VS IDEAL QUBIT
 '''
 ANIMATIONS
 '''
-'''
+
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
 # Move the left and bottom spines to x = 0 and y = 0, respectively.
@@ -241,26 +247,32 @@ def step(i):
     ind.set(visible = of[i])
     
     return (xy, axup, axdown, axtip, ind)
-'''
 
-'''
+
+
 #Animation of full trial
-video = ani.FuncAnimation(fig, step,
-                          repeat = True, 
-                          frames = len(x),
-                          interval = 50,
-                          blit = True)
-#fig.show()
+for i in range(len(mIndices)):
+    print('Making video for trial ' + str(i))
+    
+    start = mIndices[i][0]
+    end = mIndices[i][1]
+    video = ani.FuncAnimation(fig, step,
+                              repeat = True, 
+                              frames = range(start - 40, end + 40),
+                              interval = 50,
+                              blit = True)
+    #fig.show()
+    
+    #To save the animation using Pillow as a gif
+    writer = ani.PillowWriter(fps=20)
+    ffname = 'test_' + str(i) + '.gif'
+    video.save(ffname, writer=writer)
 
-#To save the animation using Pillow as a gif
-writer = ani.PillowWriter(fps=20)
-video.save('fullTest.gif', writer=writer)
-'''
 
 '''
 #Animation of a single test, where neither up or down was measured
-start = mIndices[10][0]
-end = mIndices[10][1]
+start = mIndices[740][0]
+end = mIndices[740][1]
 video = ani.FuncAnimation(fig, step,
                           repeat = True, 
                           frames = range(start - 40, end + 40),
@@ -270,7 +282,7 @@ video = ani.FuncAnimation(fig, step,
 
 #To save the animation using Pillow as a gif
 writer = ani.PillowWriter(fps=20)
-video.save('weirdTest4.gif', writer=writer)
+video.save('weirdTest5.gif', writer=writer)
 
 #It's clear that it was on its way to the expected state, but the measurement
 # period ended too early.
