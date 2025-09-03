@@ -110,7 +110,7 @@ def rangle(index):
     angle = np.arctan2(sr, cr)
     return(angle)
 
-rangles = np.array([rangle(dex[0]) for dex in mIndices])
+rangles = np.array([-rangle(dex[0]) for dex in mIndices])
 
 #Did we measure up or down on this axis?
 def updown(index, bound = 0.5):
@@ -177,6 +177,24 @@ fails = np.nonzero(deviation)
 # go on long enough that the sign of theta is changing. I think this is fine now.
 
 #Bin the relative angles and compute measured probabilities
+binCount = 10
+binStep = (np.pi / 2.0) / (binCount - 1)
+inBins = np.zeros(binCount) #Storing how many measurements in bin
+bins = np.zeros(binCount) #Storing net measurement of bin
+for i in range(len(mIndices)):
+    angle = rangles[i]
+    #Which bin does the angle go in?
+    binDex = int(np.round( angle / binStep ))
+    #Count trial
+    inBins[binDex] += 1
+    #Count result
+    bins[binDex] += (mmts[i] + 1.) / 2. 
+
+#Compute probabilities of measuring up
+probs = np.array([bins[i] / inBins[i] for i in range(binCount)])
+print(inBins)
+print(probs)
+
 
 '''
 PLOT MEASURED VS IDEAL QUBIT
@@ -185,7 +203,7 @@ PLOT MEASURED VS IDEAL QUBIT
 '''
 ANIMATIONS
 '''
-
+'''
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
 # Move the left and bottom spines to x = 0 and y = 0, respectively.
@@ -247,9 +265,9 @@ def step(i):
     ind.set(visible = of[i])
     
     return (xy, axup, axdown, axtip, ind)
+'''
 
-
-
+'''
 #Animation of full trial
 for i in range(len(mIndices)):
     print('Making video for trial ' + str(i))
@@ -267,7 +285,7 @@ for i in range(len(mIndices)):
     writer = ani.PillowWriter(fps=20)
     ffname = 'test_' + str(i) + '.gif'
     video.save(ffname, writer=writer)
-
+'''
 
 '''
 #Animation of a single test, where neither up or down was measured
