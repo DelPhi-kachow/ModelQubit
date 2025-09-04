@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = 'modelQubit_09-01-2025_194920.log'
+fname = 'modelQubit_09-03-2025_182741.log'
 
 '''
 TAKE IN THE DATA
@@ -35,6 +35,7 @@ with open(fname, 'r') as f:
     
     #Record data
     for row in fRead:
+        print(row)
         t.append(float(row[0]))
         c.append(float(row[1]))
         s.append(float(row[2]))
@@ -131,8 +132,8 @@ def updown(index, bound = 0.5):
         return 0
 
 #Try everything out for a specific measurement
-startdex = mIndices[81][0]
-enddex = mIndices[81][1]
+#startdex = mIndices[81][0]
+#enddex = mIndices[81][1]
 
 #for i in range(startdex, enddex):
     #print(of[i], c[i], s[i], x[i], y[i], updown(i))
