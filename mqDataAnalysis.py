@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = 'modelQubit_09-03-2025_182741.log'
+fname = 'modelQubit_09-03-2025_190326.log'
 
 '''
 TAKE IN THE DATA
@@ -35,7 +35,6 @@ with open(fname, 'r') as f:
     
     #Record data
     for row in fRead:
-        print(row)
         t.append(float(row[0]))
         c.append(float(row[1]))
         s.append(float(row[2]))
@@ -173,7 +172,7 @@ failFreq = np.sum(deviation / 2.) / len(deviation)
 #Okay, I added more time, but now the failure rate is still about 13%
 #Let's double check that the current failures are still the same sort of thing
 fails = np.nonzero(deviation)
-#print(fails)
+print(fails)
 #Animating a few of these, and it looks like now we're seeing the measurement
 # go on long enough that the sign of theta is changing. I think this is fine now.
 
@@ -195,6 +194,12 @@ for i in range(len(mIndices)):
 probs = np.array([bins[i] / inBins[i] for i in range(binCount)])
 print(inBins)
 print(probs)
+
+#Compare to ideal probs
+binThets = np.linspace(0.0, np.pi / 2., binCount)
+ideal = np.cos(0.5 * binThets)**2.
+print(ideal)
+print(probs-ideal)
 
 
 '''

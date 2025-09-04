@@ -19,7 +19,7 @@ const int yPin = A3;
 
 // Other parameters
 const long T = 5000; //Period of phi oscillation, in milliseconds
-const int dt = 10; //The number of milliseconds between consecutive readings
+const int dt = 50; //The number of milliseconds between consecutive readings
 const long tau = 40 * dt; //Time for a single trial, in milliseconds
 const int N = 10; //Number of trials for each angle. Sets precision of measured probabilities.
 const int m = 10; //Number of angles to measure probabilities on.
