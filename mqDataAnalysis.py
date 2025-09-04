@@ -205,6 +205,30 @@ print(probs-ideal)
 '''
 PLOT MEASURED VS IDEAL QUBIT
 '''
+#Creating the plot & axis objects
+fig, ax = plt.subplots()
+
+#Draw the plot of measured probabilities
+ax.errorbar(binThets, probs, yerr = 0.1, marker = '.', linestyle = 'none',
+            capsize = 5., ecolor = 'k', markersize = 20, color = 'red',
+            label = 'empirical')
+
+#Draw the ideal probabilities
+thetaDom = np.linspace(0.0, np.pi / 2., 1000)
+ideal = np.cos(0.5 * thetaDom)**2
+ax.plot(thetaDom, ideal,
+        label = 'ideal')
+
+#Axes labels
+ax.set_xlabel("Relative angle (rad)")
+ax.set_ylabel("Up probability")
+
+#Legend
+ax.legend()
+
+#Save figure
+fig.savefig("empiricalProb.pdf")
+fig.show()
 
 '''
 ANIMATIONS
