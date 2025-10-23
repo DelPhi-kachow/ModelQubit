@@ -181,7 +181,9 @@ binCount = 10
 binStep = (np.pi / 2.0) / (binCount - 1)
 inBins = np.zeros(binCount) #Storing how many measurements in bin
 bins = np.zeros(binCount) #Storing net measurement of bin
-for i in range(len(mIndices)):
+#Limit counted measurements to a multple of N * m
+nMmts = 400
+for i in range(nMmts):
     angle = rangles[i]
     #Which bin does the angle go in?
     binDex = int(np.round( angle / binStep ))
@@ -192,14 +194,16 @@ for i in range(len(mIndices)):
 
 #Compute probabilities of measuring up
 probs = np.array([bins[i] / inBins[i] for i in range(binCount)])
+#There should be equal counts for all of these,
+#But bin 0 is small, and bin 1 is big
 print(inBins)
-print(probs)
+#print(probs)
 
 #Compare to ideal probs
 binThets = np.linspace(0.0, np.pi / 2., binCount)
 ideal = np.cos(0.5 * binThets)**2.
-print(ideal)
-print(probs-ideal)
+#print(ideal)
+#print(probs-ideal)
 
 
 '''
