@@ -138,7 +138,7 @@ def updown(index, bound = 0.5):
     #print(of[i], c[i], s[i], x[i], y[i], updown(i))
     
 mmts = np.array([updown(i[1]) for i in mIndices])
-#print(mmts)
+#print(len(mmts))
 
 #I'm seeing a couple 0s, which is not good
 #Let's see if we can figure out why
@@ -233,6 +233,14 @@ ax.legend()
 #Save figure
 fig.savefig("empiricalProb.pdf")
 fig.show()
+
+#Compute and report reduced chi-squared of the experiment
+dof = len(probs) #Note that no post-hoc fitting was done
+var = 0.01 #Variance set by assumed error of 10%
+theoreticals = np.cos(0.5 * binThets)**2
+redChi = np.sum((probs - theoreticals)**2) / (dof * var)
+print("Reduced chi-squared: %0.2f" %redChi)
+
 
 '''
 ANIMATIONS
