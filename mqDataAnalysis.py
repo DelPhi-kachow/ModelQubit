@@ -55,6 +55,7 @@ ph = np.array(ph)
 x = np.array(x)
 y = np.array(y)
 
+
 '''
 SORT THROUGH DATA, COMPUTE STATISTICS
 '''
@@ -204,6 +205,25 @@ binThets = np.linspace(0.0, np.pi / 2., binCount)
 ideal = np.cos(0.5 * binThets)**2.
 #print(ideal)
 #print(probs-ideal)
+
+'''
+PLOT A SAMPLE OF DATA COLLECTED DURING TRIALS
+'''
+testPlot, testAx = plt.subplots(nrows = 2, ncols = 1)
+nStart, nEnd = mIndices[3][0], mIndices[5][1]
+testAx[0].plot(t[nStart:nEnd], c[nStart:nEnd] * of[nStart:nEnd], label = 'c')
+testAx[0].plot(t[nStart:nEnd], s[nStart:nEnd] * of[nStart:nEnd], label = 's')
+testAx[0].plot(t[nStart:nEnd], ph[nStart:nEnd], label = r'$\phi$')
+testAx[1].plot(t[nStart:nEnd], x[nStart:nEnd], label = r'x', ls = '--')
+testAx[1].plot(t[nStart:nEnd], y[nStart:nEnd], label = r'y', ls = '--')
+testAx[1].plot(t[nStart:nEnd], th[nStart:nEnd], label = r'$\theta$', ls = '--')
+testAx[0].legend()
+testAx[1].legend()
+testPlot.show()
+testAx[1].set(xlabel = 't(s)',
+              ylabel = 'Measurements')
+testAx[0].set(ylabel = 'Control Signals')
+testPlot.savefig('trialCycle.pdf')
 
 
 '''
