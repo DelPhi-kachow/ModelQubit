@@ -19,18 +19,18 @@ const int xPin = A2;
 const int yPin = A3;
 
 // Other parameters
-const long T = 5000; //Period of phi oscillation, in milliseconds
 const int dt = 50; //The number of milliseconds between consecutive readings
-const long tau = 40 * dt; //Time for a single trial, in milliseconds
-const int N = 10; //Number of trials for each angle. Sets precision of measured probabilities.
+const int N = 10; //Number of phi samples (and trials per angle). Sets precision of measured probabilities.
 const int m = 10; //Number of angles to measure probabilities on.
 
-//Ensure that each angle suite ends on a distinct value of phi
-const long rem = (m * tau) % T;
-const long desiredRem = T / N;
-
-//If the timing is off, calculate an extra delay time after a suite of trials
-const long offset = desiredRem - rem;
+// Phi sweep: PWM 0 → -5 V, PWM 255 → +5 V. We only use the old triangle range.
+const float V_RAIL = 5.0;     // Full-scale op-amp voltage at the PWM extremes
+const float V_PHI_LO = 0.0;   // Intended sweep low (V)
+const float V_PHI_HI = 1.848; // Intended sweep high (V)
+const float V_CLIP = 0.277;   // Clip both ends to avoid unphysical levels
+// Stored/commanded phi is in units of V_RAIL (same as c/s), so 0 V → 0, 5 V → 1
+const float phiMin = (V_PHI_LO + V_CLIP) / V_RAIL;
+const float phiMax = (V_PHI_HI - V_CLIP) / V_RAIL;
 
 // Measurement tracking
 float c = 0;
@@ -59,7 +59,7 @@ void setAxis_rel(float angle) {
   s = (y * cPrime) + (x * sPrime);
 }
 
-// Set phi voltage (bipolar, same scaling as c/s)
+// Set phi (normalized to ±V_RAIL, same scaling as c/s: -1 → -5 V, +1 → +5 V)
 void setPhi(float phiIn) {
   phi = phiIn;
   int phiOut = int(255.0 * ((phi + 1.0) / 2.0));
@@ -154,20 +154,12 @@ void angleSuite() {
   }
 }
 
-// Perform the full suite of trials for all angles
+// Perform the full suite: N phi samples × m relative angles
 void fullSuite(){
-  //Perform all trials
-  for(int i; i < N; i++) {
-    //Perform an angle suite
+  for (int i = 0; i < N; i++) {
+    float phiVal = phiMin + i * (phiMax - phiMin) / (N - 1.0);
+    setPhi(phiVal);
     angleSuite();
-
-    //Add extra delay
-    if (offset > 0) {
-      delay(offset);
-    }
-    else {
-      delay( T + offset );
-    }
   }
 }
 
