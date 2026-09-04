@@ -4,16 +4,17 @@ Benjamin Krawciw
 8/17/2025
 
 This program runs on an arduino microcontroller connected to a circuit which models a qubit. The arduino sets a measurement axis via voltages 
-s (sine) and c(cosine) and observes voltages x and y, which will "collapse" to either align or antialign with c and s. The arduino records these
-(and other relevant) voltages over time and prints them to the serial monitor, which can be recorded to a csv file. 
+s (sine) and c(cosine) and observes voltages x and y, which will "collapse" to either align or antialign with c and s. The arduino also sets 
+the phi voltage (same drive circuit as c/s). It records these (and other relevant) voltages over time and prints them to the serial monitor, 
+which can be recorded to a csv file. 
 */
 
 
 // Set pin numbers
 const int cPin = 6;
 const int sPin = 5;
+const int phiPin = 3; // PWM output (same drive circuit as c/s)
 const int thetPin = A1;
-const int phiPin = A0;
 const int xPin = A2;
 const int yPin = A3;
 
@@ -58,6 +59,13 @@ void setAxis_rel(float angle) {
   s = (y * cPrime) + (x * sPrime);
 }
 
+// Set phi voltage (bipolar, same scaling as c/s)
+void setPhi(float phiIn) {
+  phi = phiIn;
+  int phiOut = int(255.0 * ((phi + 1.0) / 2.0));
+  analogWrite(phiPin, phiOut);
+}
+
 // Switch measurement on/off
 void measureOn() {
   // Turn on the measurement coupling
@@ -82,15 +90,14 @@ void readState() {
   // timer
   t = millis() / 1000.0;
   // analog reads as fraction of max voltage
+  // phi is commanded by setPhi (no longer read back)
   float thetaRaw = analogRead(thetPin) / 1023.0;
-  float phiRaw = analogRead(phiPin) / 1023.0;
   float xRaw = analogRead(xPin) / 1023.0;
   float yRaw = analogRead(yPin) / 1023.0;
 
   //Convert raw readings to appropriate coordinates
   //A lot of the complexity here is because there is a level shifting circuit to deal with negative voltages
   theta = 2.0 * thetaRaw - 1.0;
-  phi = phiRaw;
   x = 2.0 * xRaw - 1.0;
   y = 2.0 * yRaw - 1.0;
 }
