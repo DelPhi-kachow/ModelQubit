@@ -85,6 +85,23 @@ void measureOff() {
   analogWrite(sPin, 128);
 }
 
+// Set (x, y) indirectly by measuring along (xIn, yIn), waiting to equilibrate, then releasing.
+// Phi is parked slightly negative during the collapse so the state can settle, then restored.
+void setXY(float xIn, float yIn) {
+  float phiPrev = phi;
+  setPhi(-V_CLIP / V_RAIL); // slightly below 0 V
+
+  c = xIn;
+  s = yIn;
+  measureOn();
+  delay(1000); // Fixed settle time; could later wait until (x, y) is close enough
+  c = 0.0;
+  s = 0.0;
+  measureOff();
+
+  setPhi(phiPrev);
+}
+
 // Record state to variables
 void readState() {
   // timer
