@@ -27,7 +27,7 @@ const int m = 10; //Number of angles to measure probabilities on.
 const float V_RAIL = 5.0;     // Full-scale op-amp voltage at the PWM extremes
 const float V_PHI_LO = 0.0;   // Intended sweep low (V)
 const float V_PHI_HI = 1.848; // Intended sweep high (V)
-const float V_CLIP = 0.277;   // Clip both ends to avoid unphysical levels
+const float V_CLIP = 0.05;   // Clip both ends to avoid unphysical levels
 // Stored/commanded phi is in units of V_RAIL (same as c/s), so 0 V → 0, 5 V → 1
 const float phiMin = (V_PHI_LO + V_CLIP) / V_RAIL;
 const float phiMax = (V_PHI_HI - V_CLIP) / V_RAIL;
