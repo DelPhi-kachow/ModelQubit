@@ -234,7 +234,6 @@ print("Reduced chi-squared: %0.2f" %redChi)
 ANIMATIONS
 '''
 
-'''
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
 # Move the left and bottom spines to x = 0 and y = 0, respectively.
@@ -306,9 +305,13 @@ def trial_frames(start, end, pad = 40):
     hi = min(len(t) - 1, end + pad)
     return range(lo, hi + 1)
 
+#Save / skip GIFs in animations/
+animDir = 'animations'
+os.makedirs(animDir, exist_ok = True)
+
 #Animation of full trial
 for i in range(len(mIndices)):
-    ffname = 'test_' + str(i) + '.gif'
+    ffname = os.path.join(animDir, 'test_' + str(i) + '.gif')
     if os.path.exists(ffname):
         print('Skipping existing video for trial ' + str(i))
         continue
@@ -327,14 +330,14 @@ for i in range(len(mIndices)):
     #To save the animation using Pillow as a gif
     writer = ani.PillowWriter(fps=20)
     video.save(ffname, writer=writer)
-'''
 
 #Optional: animate a specific inconclusive trial if it exists in this log
 #It's clear that it was on its way to the expected state, but the measurement
 # period ended too early.
 '''
 weirdDex = 740
-if weirdDex < len(mIndices) and not os.path.exists('weirdTest5.gif'):
+weirdPath = os.path.join(animDir, 'weirdTest5.gif')
+if weirdDex < len(mIndices) and not os.path.exists(weirdPath):
     start = mIndices[weirdDex][0]
     end = mIndices[weirdDex][1]
     video = ani.FuncAnimation(fig, step,
@@ -343,5 +346,5 @@ if weirdDex < len(mIndices) and not os.path.exists('weirdTest5.gif'):
                               interval = 50,
                               blit = True)
     writer = ani.PillowWriter(fps=20)
-    video.save('weirdTest5.gif', writer=writer)
+    video.save(weirdPath, writer=writer)
 '''
