@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = 'modelQubit_09-03-2025_190326.log'
+fname = 'modelQubit_09-05-2026_231938_noclip.log'
 
 '''
 TAKE IN THE DATA
