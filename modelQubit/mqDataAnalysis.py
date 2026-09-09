@@ -10,6 +10,7 @@ show via plots that it properly recreates the statistics of a qubit.
 
 #Library imports 
 import csv
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as ani
@@ -61,14 +62,11 @@ SORT THROUGH DATA, COMPUTE STATISTICS
 '''
 
 #Count how many distinct measurements were taken
-count = 0
 mIndices = []
 incycle = False
 startdex = 0
-enddex = 0
 #Iterate through on/off
 for i, elem in enumerate(of):
-    #print(i, elem)
     #Don't start looking until measurement activates
     if (c[i] == 0.0) and (s[i] == 0.0):
         continue
@@ -83,11 +81,17 @@ for i, elem in enumerate(of):
         else:
             #End and record the previous cycle
             enddex = i-1
-            count += 1
             mIndices.append( (startdex, enddex) )
             
             #Begin the next cycle
             startdex = i
+
+#Close the final cycle at end-of-file (logs have variable length)
+if incycle:
+    mIndices.append( (startdex, len(of) - 1) )
+
+count = len(mIndices)
+print(f"Found {count} measurement cycles in {fname}")
 
 #Normalize a sine-cosine pair
 def normPair(cIn, sIn):
@@ -131,72 +135,33 @@ def updown(index, bound = 0.5):
     else:
         return 0
 
-#Try everything out for a specific measurement
-#startdex = mIndices[81][0]
-#enddex = mIndices[81][1]
-
-#for i in range(startdex, enddex):
-    #print(of[i], c[i], s[i], x[i], y[i], updown(i))
     
 mmts = np.array([updown(i[1]) for i in mIndices])
-#print(len(mmts))
-
-#I'm seeing a couple 0s, which is not good
-#Let's see if we can figure out why
-#I need to locate and plot one of these
-'''
-After doing the plotting, it seems clear that (x,y) was on its way to the 
-expected location, but the measurement ended too early. To see how often this
-happened, I can compute the expected measurement from theta and see how often
-the test had enough time.
-'''
-
-#Time average theta during a trial
-theets = np.array([
-    np.average(th[mIndices[i][0] : mIndices[i][1]]) 
-    for i in range(len(mIndices))
-    ])
-#The measurement is expected to converge to the sign of theta
-expectation = np.sign(theets)
-#print(expectation)
-
-#How often was that the case?
-deviation = mmts - expectation
-#print(deviation)
-failFreq = np.sum(deviation / 2.) / len(deviation)
-#print(failFreq)
-
-#This is over a 30% failure rate!
-#I need to double check some of the identified failures in animation
-#It does indeed look like many tests did not have enough time under measurement
-#I'll need to redo the tests with more measurement time
-#Okay, I added more time, but now the failure rate is still about 13%
-#Let's double check that the current failures are still the same sort of thing
-fails = np.nonzero(deviation)
-print(fails)
-#Animating a few of these, and it looks like now we're seeing the measurement
-# go on long enough that the sign of theta is changing. I think this is fine now.
 
 #Bin the relative angles and compute measured probabilities
 binCount = 10
 binStep = (np.pi / 2.0) / (binCount - 1)
 inBins = np.zeros(binCount) #Storing how many measurements in bin
 bins = np.zeros(binCount) #Storing net measurement of bin
-#Limit counted measurements to a multple of N * m
-nMmts = 400
+#Use every measurement found in this log (length varies by run)
+nMmts = len(mIndices)
 for i in range(nMmts):
     angle = rangles[i]
     #Which bin does the angle go in?
     binDex = int(np.round( angle / binStep ))
+    #Skip angles that fall outside the [0, pi/2] analysis window
+    if binDex < 0 or binDex >= binCount:
+        continue
     #Count trial
     inBins[binDex] += 1
     #Count result
     bins[binDex] += (mmts[i] + 1.) / 2. 
 
-#Compute probabilities of measuring up
-probs = np.array([bins[i] / inBins[i] for i in range(binCount)])
-#There should be equal counts for all of these,
-#But bin 0 is small, and bin 1 is big
+#Compute probabilities of measuring up (empty bins -> nan)
+probs = np.full(binCount, np.nan)
+nonzero = inBins > 0
+probs[nonzero] = bins[nonzero] / inBins[nonzero]
+print(f"Using {nMmts} measurements")
 print(inBins)
 #print(probs)
 
@@ -205,6 +170,8 @@ binThets = np.linspace(0.0, np.pi / 2., binCount)
 ideal = np.cos(0.5 * binThets)**2.
 #print(ideal)
 #print(probs-ideal)
+
+valid = ~np.isnan(probs)
 
 '''
 PLOT A SAMPLE OF DATA COLLECTED DURING TRIALS
@@ -233,7 +200,7 @@ PLOT MEASURED VS IDEAL QUBIT
 fig, ax = plt.subplots()
 
 #Draw the plot of measured probabilities
-ax.errorbar(binThets, probs, yerr = 0.1, marker = '.', linestyle = 'none',
+ax.errorbar(binThets[valid], probs[valid], yerr = 0.1, marker = '.', linestyle = 'none',
             capsize = 5., ecolor = 'k', markersize = 20, color = 'red',
             label = 'empirical')
 
@@ -255,16 +222,18 @@ fig.savefig("empiricalProb.pdf")
 fig.show()
 
 #Compute and report reduced chi-squared of the experiment
-dof = len(probs) #Note that no post-hoc fitting was done
+#Only bins that received at least one count contribute (empty bins vary with log length)
+dof = int(np.sum(valid)) #Note that no post-hoc fitting was done
 var = 0.01 #Variance set by assumed error of 10%
 theoreticals = np.cos(0.5 * binThets)**2
-redChi = np.sum((probs - theoreticals)**2) / (dof * var)
+redChi = np.sum((probs[valid] - theoreticals[valid])**2) / (dof * var)
 print("Reduced chi-squared: %0.2f" %redChi)
 
 
 '''
 ANIMATIONS
 '''
+
 '''
 #Plotting csxy state
 fig, ax = plt.subplots(figsize = [3., 3.])
@@ -289,13 +258,16 @@ ax.tick_params(grid_alpha = 0.5,
 unitC = plt.Circle((0., 0.), 1., fill = False, ec = 'k')
 ax.add_patch(unitC)
 
+#Safe initial frame (old logs assumed index 1000 always existed)
+i0 = min(1000, len(x) - 1)
+
 #Plot an xy point
-xy, = ax.plot([x[1000]], [y[1000]], marker = 'o')
+xy, = ax.plot([x[i0]], [y[i0]], marker = 'o')
 
 #Draw the measurement axis
-axup, = ax.plot([0., c[1000]], [0., s[1000]], color = 'orange')
-axdown, = ax.plot([0., -c[1000]], [0., -s[1000]], color = 'orange', ls = '--')
-axtip, = ax.plot(c[1000], s[1000], color = 'orange', marker = 'o', mfc = 'white')
+axup, = ax.plot([0., c[i0]], [0., s[i0]], color = 'orange')
+axdown, = ax.plot([0., -c[i0]], [0., -s[i0]], color = 'orange', ls = '--')
+axtip, = ax.plot(c[i0], s[i0], color = 'orange', marker = 'o', mfc = 'white')
 
 #Indicator for measuring
 ind = plt.Circle((0.95, 0.95), 0.05, color = 'red')
@@ -327,43 +299,49 @@ def step(i):
     ind.set(visible = of[i])
     
     return (xy, axup, axdown, axtip, ind)
-'''
 
-'''
+#Keep animation frames inside the recorded sample range
+def trial_frames(start, end, pad = 40):
+    lo = max(0, start - pad)
+    hi = min(len(t) - 1, end + pad)
+    return range(lo, hi + 1)
+
 #Animation of full trial
 for i in range(len(mIndices)):
+    ffname = 'test_' + str(i) + '.gif'
+    if os.path.exists(ffname):
+        print('Skipping existing video for trial ' + str(i))
+        continue
+
     print('Making video for trial ' + str(i))
     
     start = mIndices[i][0]
     end = mIndices[i][1]
     video = ani.FuncAnimation(fig, step,
                               repeat = True, 
-                              frames = range(start - 40, end + 40),
+                              frames = trial_frames(start, end),
                               interval = 50,
                               blit = True)
     #fig.show()
     
     #To save the animation using Pillow as a gif
     writer = ani.PillowWriter(fps=20)
-    ffname = 'test_' + str(i) + '.gif'
     video.save(ffname, writer=writer)
 '''
 
-'''
-#Animation of a single test, where neither up or down was measured
-start = mIndices[740][0]
-end = mIndices[740][1]
-video = ani.FuncAnimation(fig, step,
-                          repeat = True, 
-                          frames = range(start - 40, end + 40),
-                          interval = 50,
-                          blit = True)
-#fig.show()
-
-#To save the animation using Pillow as a gif
-writer = ani.PillowWriter(fps=20)
-video.save('weirdTest5.gif', writer=writer)
-
+#Optional: animate a specific inconclusive trial if it exists in this log
 #It's clear that it was on its way to the expected state, but the measurement
 # period ended too early.
+'''
+weirdDex = 740
+if weirdDex < len(mIndices) and not os.path.exists('weirdTest5.gif'):
+    start = mIndices[weirdDex][0]
+    end = mIndices[weirdDex][1]
+    video = ani.FuncAnimation(fig, step,
+                              repeat = True, 
+                              frames = trial_frames(start, end),
+                              interval = 50,
+                              blit = True)
+    writer = ani.PillowWriter(fps=20)
+    video.save('weirdTest5.gif', writer=writer)
 '''
