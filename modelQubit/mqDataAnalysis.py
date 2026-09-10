@@ -858,6 +858,616 @@ exFig.show()
 
 
 '''
+ONE-STEP PREDICTION + REDUCED CHI-SQUARED (FULL SECOND-ORDER STATE)
+
+The ODEs are second order, so the state is (x, y, v_x, v_y). From the measured
+state at t_i, predict the full state at t_{i+1} and score all four residuals.
+
+  chi^2 = sum_i sum_{alpha in {x,y,vx,vy}} (r_{alpha,i} / sigma_alpha)^2
+  nu    = 4 N_steps - 3   (subtract fitted k, d, g)
+
+One-step Euler map (linear in k, d, g):
+  a = k q (1-r^2) - d v + g theta n_eff
+  v_{i+1} = v_i + dt a
+  q_{i+1} = q_i + dt v_i + dt^2 a
+
+Velocities are causal backward differences of the smoothed positions (no look-ahead).
+Sigmas are force-off one-step residuals after fitting (k, d) with n_eff = 0.
+'''
+
+print("\n--- One-step ODE check, full state (x,y,vx,vy) ---")
+
+# Causal velocity from smoothed natural-unit positions
+vxC = np.full(len(t), np.nan)
+vyC = np.full(len(t), np.nan)
+vxC[1:] = np.diff(xSoft) / np.diff(t)
+vyC[1:] = np.diff(ySoft) / np.diff(t)
+
+# Pairs need a defined v at i (so i >= 1) and valid smoothing support
+offPairs = []
+onPairs = []
+for i in range(len(t) - 1):
+    if not (validSoft[i] and validSoft[i + 1]):
+        continue
+    if not np.isfinite(vxC[i]):
+        continue
+    if (not of[i]) and (not of[i + 1]):
+        offPairs.append(i)
+    elif of[i] and of[i + 1]:
+        onPairs.append(i)
+offPairs = np.array(offPairs, dtype = int)
+onPairs = np.array(onPairs, dtype = int)
+
+# Channel order within each time step: x, y, vx, vy
+STATE_LABELS = ('x', 'y', 'vx', 'vy')
+
+def oneStepDesignFull(pairs):
+    """
+    Four rows per time step (x, y, vx, vy).
+    Position target: q_{i+1} - q_i - dt v_i   ~ dt^2 * a
+    Velocity target: v_{i+1} - v_i           ~ dt  * a
+    with a columns [q(1-r^2), -v, theta n].
+    """
+    rows = []
+    targets = []
+    for i in pairs:
+        dtStep = t[i + 1] - t[i]
+        dt2 = dtStep * dtStep
+        r2i = xSoft[i]**2 + ySoft[i]**2
+        radX = xSoft[i] * (1.0 - r2i)
+        radY = ySoft[i] * (1.0 - r2i)
+        # x position
+        rows.append((dt2 * radX, dt2 * (-vxC[i]), dt2 * thSoft[i] * cEff[i]))
+        targets.append(xSoft[i + 1] - xSoft[i] - dtStep * vxC[i])
+        # y position
+        rows.append((dt2 * radY, dt2 * (-vyC[i]), dt2 * thSoft[i] * sEff[i]))
+        targets.append(ySoft[i + 1] - ySoft[i] - dtStep * vyC[i])
+        # vx
+        rows.append((dtStep * radX, dtStep * (-vxC[i]), dtStep * thSoft[i] * cEff[i]))
+        targets.append(vxC[i + 1] - vxC[i])
+        # vy
+        rows.append((dtStep * radY, dtStep * (-vyC[i]), dtStep * thSoft[i] * sEff[i]))
+        targets.append(vyC[i + 1] - vyC[i])
+    return np.asarray(rows, dtype = float), np.asarray(targets, dtype = float)
+
+def splitChannels(resid):
+    """Split flat residual vector into dict of per-channel arrays."""
+    return {lab: resid[i::4] for i, lab in enumerate(STATE_LABELS)}
+
+def distMoments(arr, name):
+    arr = np.asarray(arr, dtype = float)
+    mu = float(np.mean(arr))
+    std = float(np.std(arr))
+    centered = arr - mu
+    skew = float(np.mean(centered**3) / std**3) if std > 0 else float('nan')
+    kurt = float(np.mean(centered**4) / std**4) if std > 0 else float('nan')
+    mad = float(np.median(np.abs(arr - np.median(arr))))
+    sigmaMad = 1.4826 * mad
+    z = np.abs(centered) / std if std > 0 else np.zeros_like(arr)
+    print(f"{name}: n={len(arr)}, mean={mu:.4g}, std={std:.4g}, "
+          f"skew={skew:.3f}, kurtosis={kurt:.3f} (Gauss=3, excess={kurt - 3:.3f})")
+    print(f"  MAD={mad:.4g}, sigma_MAD={sigmaMad:.4g}, "
+          f"std/sigma_MAD={std / sigmaMad if sigmaMad > 0 else float('nan'):.2f}")
+    print(f"  frac |z|>2,3,5: {np.mean(z > 2):.3f}, {np.mean(z > 3):.3f}, "
+          f"{np.mean(z > 5):.3f}  (Gauss ~0.046, 0.0027, 6e-7)")
+    return dict(mu = mu, std = std, skew = skew, kurt = kurt, sigmaMad = sigmaMad)
+
+# --- Force-off: fit k, d; sigma per channel from residuals ---
+AoffStep, boffStep = oneStepDesignFull(offPairs)
+AoffKD = AoffStep[:, :2]
+coeffOff, _, _, _ = np.linalg.lstsq(AoffKD, boffStep, rcond = None)
+kOff, dOff = coeffOff
+residOff = boffStep - AoffKD @ coeffOff
+chOff = splitChannels(residOff)
+sigmas = {lab: float(np.sqrt(np.mean(chOff[lab]**2))) for lab in STATE_LABELS}
+
+nOffObs = len(boffStep)
+nOffParams = 2
+nuOffSigma = nOffObs - nOffParams
+chi2OffCal = sum(np.sum((chOff[lab] / sigmas[lab])**2) for lab in STATE_LABELS)
+
+adcStepNat = (2.0 / 1023.0) / Robs
+print(f"Force-off one-step pairs: {len(offPairs)}")
+print(f"Force-off ODE fit (k, d only): k={kOff:.3g}, d={dOff:.3g}")
+print(f"Tight sigmas (q and v) after force-off k,d fit:")
+for lab in STATE_LABELS:
+    print(f"  sigma_{lab} = {sigmas[lab]:.4g}")
+print(f"ADC position step (natural units): {adcStepNat:.4g}")
+print(f"Force-off chi^2_red (calibration): {chi2OffCal / nuOffSigma:.3f}  "
+      f"(nu={nuOffSigma})")
+
+print("Force-off residual distributions (sigma samples):")
+momsOff = {lab: distMoments(chOff[lab], f"  d{lab}") for lab in STATE_LABELS}
+
+sigFig, sigAxes = plt.subplots(nrows = 2, ncols = 2, figsize = (8, 6))
+zg = np.linspace(-6, 6, 300)
+gauss = np.exp(-0.5 * zg**2) / np.sqrt(2 * np.pi)
+for axS, lab in zip(sigAxes.ravel(), STATE_LABELS):
+    z = chOff[lab] / sigmas[lab]
+    axS.hist(z, bins = 80, density = True, alpha = 0.7, color = 'tab:blue')
+    axS.plot(zg, gauss, 'k--', lw = 1)
+    axS.set_xlim(-6, 6)
+    axS.set_title(lab)
+    axS.set_xlabel(r'residual / $\sigma$')
+sigFig.suptitle('Force-off full-state residuals (sigma samples)')
+sigFig.tight_layout()
+sigFig.savefig('odeSigmaDistribution.pdf')
+sigFig.show()
+
+# --- Force-on: weighted fit of k, d, g on full state ---
+AonStep, bonStep = oneStepDesignFull(onPairs)
+w = np.empty(len(bonStep))
+for i, lab in enumerate(STATE_LABELS):
+    w[i::4] = 1.0 / sigmas[lab]
+coeffStep, _, _, _ = np.linalg.lstsq(AonStep * w[:, None], bonStep * w, rcond = None)
+kStep, dStep, gStep = coeffStep
+residOn = bonStep - AonStep @ coeffStep
+chOn = splitChannels(residOn)
+
+nParams = 3
+nStepsOn = len(onPairs)
+nObsOn = 4 * nStepsOn
+nuOn = nObsOn - nParams
+chi2On = sum(np.sum((chOn[lab] / sigmas[lab])**2) for lab in STATE_LABELS)
+chi2RedOn = chi2On / nuOn if nuOn > 0 else float('nan')
+
+# Position-only and velocity-only chi^2 for diagnosis
+chi2Pos = (np.sum((chOn['x'] / sigmas['x'])**2) + np.sum((chOn['y'] / sigmas['y'])**2))
+chi2Vel = (np.sum((chOn['vx'] / sigmas['vx'])**2) + np.sum((chOn['vy'] / sigmas['vy'])**2))
+nuPos = 2 * nStepsOn  # not subtracting params again for the split view
+nuVel = 2 * nStepsOn
+
+print(f"One-step fit on force-on pairs (N_steps={nStepsOn}):")
+print(f"  k={kStep:.3g}, d={dStep:.3g}, g={gStep:.3g}")
+print(f"  chi^2 = {chi2On:.3g},  nu = 4*{nStepsOn} - {nParams} = {nuOn}")
+print(f"  reduced chi^2 (full state) = {chi2RedOn:.3f}")
+print(f"  position-only chi^2 / 2N = {chi2Pos / nuPos:.3f}")
+print(f"  velocity-only chi^2 / 2N = {chi2Vel / nuVel:.3f}")
+print("  RMS residuals vs sigma:")
+for lab in STATE_LABELS:
+    rms = float(np.sqrt(np.mean(chOn[lab]**2)))
+    print(f"    {lab}: rms={rms:.4g}, sigma={sigmas[lab]:.4g}, ratio={rms / sigmas[lab]:.2f}")
+
+print("Force-on residual distributions:")
+for lab in STATE_LABELS:
+    distMoments(chOn[lab], f"  d{lab}")
+
+chi2PerStep = sum((chOn[lab] / sigmas[lab])**2 for lab in STATE_LABELS)
+print(f"Per-step chi^2: mean={np.mean(chi2PerStep):.2f}, median={np.median(chi2PerStep):.2f}, "
+      f"p95={np.percentile(chi2PerStep, 95):.2f}, max={np.max(chi2PerStep):.2f}")
+top5 = chi2PerStep >= np.percentile(chi2PerStep, 95)
+print(f"Fraction of total chi^2 from top 5% steps: "
+      f"{np.sum(chi2PerStep[top5]) / np.sum(chi2PerStep):.2f}")
+
+# Heteroscedasticity in q and v
+stepQOff = np.hypot(xSoft[offPairs + 1] - xSoft[offPairs],
+                    ySoft[offPairs + 1] - ySoft[offPairs])
+stepQOn = np.hypot(xSoft[onPairs + 1] - xSoft[onPairs],
+                   ySoft[onPairs + 1] - ySoft[onPairs])
+stepVOff = np.hypot(vxC[offPairs + 1] - vxC[offPairs],
+                    vyC[offPairs + 1] - vyC[offPairs])
+stepVOn = np.hypot(vxC[onPairs + 1] - vxC[onPairs],
+                   vyC[onPairs + 1] - vyC[onPairs])
+print(f"RMS |Delta q| per step: off={np.sqrt(np.mean(stepQOff**2)):.4g}, "
+      f"on={np.sqrt(np.mean(stepQOn**2)):.4g}, "
+      f"ratio={np.sqrt(np.mean(stepQOn**2) / np.mean(stepQOff**2)):.2f}")
+print(f"RMS |Delta v| per step: off={np.sqrt(np.mean(stepVOff**2)):.4g}, "
+      f"on={np.sqrt(np.mean(stepVOn**2)):.4g}, "
+      f"ratio={np.sqrt(np.mean(stepVOn**2) / np.mean(stepVOff**2)):.2f}")
+
+# Explanatory power: ballistic/coasting baseline (a=0) vs ODE
+# coasting targets are exactly bonStep; ODE residual is residOn
+baseVar = float(np.mean(bonStep**2))
+odeVar = float(np.mean(residOn**2))
+print(f"Fraction of coasting one-step variance explained by ODE (all channels): "
+      f"{1.0 - odeVar / baseVar:.3f}")
+
+keep = ~top5
+nuTrim = int(np.sum(keep)) * 4 - nParams
+print(f"Chi^2_red after dropping worst 5% steps: "
+      f"{np.sum(chi2PerStep[keep]) / nuTrim:.3f} (nu={nuTrim})")
+
+# Residual histograms by channel
+chiFig, chiAxes = plt.subplots(nrows = 2, ncols = 2, figsize = (8, 6))
+for axC, lab in zip(chiAxes.ravel(), STATE_LABELS):
+    axC.hist(chOn[lab] / sigmas[lab], bins = 60, density = True, alpha = 0.7)
+    axC.plot(zg, gauss, 'k--', lw = 1)
+    axC.set_xlim(-6, 6)
+    axC.set_title(lab)
+    axC.set_xlabel(r'residual / $\sigma$')
+chiFig.suptitle(r'Force-on full-state residuals ($\chi^2_\nu = %0.2f$)' % chi2RedOn)
+chiFig.tight_layout()
+chiFig.savefig('odeOneStepResiduals.pdf')
+chiFig.show()
+
+# Scatter: predicted vs measured increment for position and velocity (x-channels)
+stepFig, stepAxes = plt.subplots(nrows = 1, ncols = 2, figsize = (8, 4))
+predOn = AonStep @ coeffStep
+for axP, idx, title in (
+    (stepAxes[0], 0, r'position $x$: $q_{i+1}-q_i-\Delta t v_i$'),
+    (stepAxes[1], 2, r'velocity $v_x$: $v_{i+1}-v_i$'),
+):
+    meas = bonStep[idx::4]
+    pred = predOn[idx::4]
+    nShowStep = min(3000, len(meas))
+    showStep = rng.choice(len(meas), size = nShowStep, replace = False)
+    axP.scatter(meas[showStep], pred[showStep], s = 6, alpha = 0.25)
+    limStep = np.percentile(np.abs(meas), 99)
+    axP.plot([-limStep, limStep], [-limStep, limStep], 'k--', lw = 1)
+    axP.set_xlabel('measured')
+    axP.set_ylabel('ODE')
+    axP.set_title(title)
+    axP.set_aspect('equal', adjustable = 'box')
+    axP.set_xlim(-limStep, limStep)
+    axP.set_ylim(-limStep, limStep)
+stepFig.suptitle('One-step full-state force fit')
+stepFig.tight_layout()
+stepFig.savefig('odeOneStepScatter.pdf')
+stepFig.show()
+
+
+'''
+FORCE LIBRARY IDENTIFICATION (what is the analog computer actually computing?)
+
+Estimate a ≈ Δv/Δt from the causal one-step state, then regress onto a library of
+plausible analog-computer terms built from (x, y, v, c_eff, s_eff, theta, r^2, u).
+Mirrored libraries for a_x and a_y share one coefficient vector.
+
+Designed ODE terms are included explicitly:
+  x(1-r^2), -v_x, theta*c   (and y-mirrors)
+plus extras that multipliers/summers could produce.
+'''
+
+print("\n--- Force library identification ---")
+
+LIB_NAMES = [
+    '1',
+    'x', 'y',                 # with x*r^2 spans designed x*(1-r^2)
+    'vx', 'vy',
+    'c', 's',
+    'theta',
+    'theta*c', 'theta*s',     # designed measurement force
+    'theta*x', 'theta*y',
+    'x*r^2', 'y*r^2',
+    'u',                      # u = x c + y s
+    'u*c', 'u*s',             # appears if force ~ (1+u)*axis
+    'u*x', 'u*y',
+    'x*c', 'x*s', 'y*c', 'y*s',
+    'theta*u',
+    'theta*u*c', 'theta*u*s',
+]
+
+def featuresDict(qx, qy, vx, vy, cx, sy, thv):
+    r2v = qx * qx + qy * qy
+    u = qx * cx + qy * sy
+    return {
+        '1': 1.0,
+        'x': qx, 'y': qy,
+        'vx': vx, 'vy': vy,
+        'c': cx, 's': sy,
+        'theta': thv,
+        'theta*c': thv * cx, 'theta*s': thv * sy,
+        'theta*x': thv * qx, 'theta*y': thv * qy,
+        'x*r^2': qx * r2v, 'y*r^2': qy * r2v,
+        'u': u,
+        'u*c': u * cx, 'u*s': u * sy,
+        'u*x': u * qx, 'u*y': u * qy,
+        'x*c': qx * cx, 'x*s': qx * sy, 'y*c': qy * cx, 'y*s': qy * sy,
+        'theta*u': thv * u,
+        'theta*u*c': thv * u * cx, 'theta*u*s': thv * u * sy,
+    }
+
+# Shared coeffs: a_y uses mirrored features under x<->y, c<->s, vx<->vy
+MIRROR_MAP = {
+    '1': '1',
+    'x': 'y', 'y': 'x',
+    'vx': 'vy', 'vy': 'vx',
+    'c': 's', 's': 'c',
+    'theta': 'theta',
+    'theta*c': 'theta*s', 'theta*s': 'theta*c',
+    'theta*x': 'theta*y', 'theta*y': 'theta*x',
+    'x*r^2': 'y*r^2', 'y*r^2': 'x*r^2',
+    'u': 'u',
+    'u*c': 'u*s', 'u*s': 'u*c',
+    'u*x': 'u*y', 'u*y': 'u*x',
+    'x*c': 'y*s', 'y*s': 'x*c',
+    'x*s': 'y*c', 'y*c': 'x*s',
+    'theta*u': 'theta*u',
+    'theta*u*c': 'theta*u*s', 'theta*u*s': 'theta*u*c',
+}
+
+def buildForceSystem(pairs):
+    rows = []
+    targets = []
+    for i in pairs:
+        dtStep = t[i + 1] - t[i]
+        if dtStep <= 0 or not np.isfinite(vxC[i + 1]):
+            continue
+        f = featuresDict(
+            xSoft[i], ySoft[i], vxC[i], vyC[i],
+            cEff[i], sEff[i], thSoft[i],
+        )
+        rows.append([f[n] for n in LIB_NAMES])
+        targets.append((vxC[i + 1] - vxC[i]) / dtStep)
+        rows.append([f[MIRROR_MAP[n]] for n in LIB_NAMES])
+        targets.append((vyC[i + 1] - vyC[i]) / dtStep)
+    return np.asarray(rows, dtype = float), np.asarray(targets, dtype = float)
+
+def sindyFit(A, b, names, nThresh = 8, threshFrac = 0.05):
+    """Least squares with iterative hard thresholding (simple SINDy)."""
+    coeff = np.linalg.lstsq(A, b, rcond = None)[0]
+    for _ in range(nThresh):
+        scale = np.max(np.abs(coeff)) if np.max(np.abs(coeff)) > 0 else 1.0
+        keep = np.abs(coeff) >= threshFrac * scale
+        if np.sum(keep) == 0:
+            keep[np.argmax(np.abs(coeff))] = True
+        coeff2 = np.zeros_like(coeff)
+        coeff2[keep] = np.linalg.lstsq(A[:, keep], b, rcond = None)[0]
+        coeff = coeff2
+    return coeff
+
+def reportForceFit(pairs, label, doSindy = True):
+    A, b = buildForceSystem(pairs)
+    # Drop near-collinear empty columns (e.g. c,s during force-off)
+    colStd = np.std(A, axis = 0)
+    active = colStd > 1e-9
+    Aact = A[:, active]
+    namesAct = [n for n, a in zip(LIB_NAMES, active) if a]
+
+    coeffFull = np.zeros(len(LIB_NAMES))
+    coeffFull[active] = np.linalg.lstsq(Aact, b, rcond = None)[0]
+    predFull = A @ coeffFull
+    r2Full = rSquared(b, predFull)
+    rms = float(np.sqrt(np.mean((b - predFull)**2)))
+
+    print(f"\n{label}: N_eq={len(b)} ({len(pairs)} steps x 2)")
+    print(f"  dense library R^2={r2Full:.3f}, residual RMS={rms:.4g}")
+    order = np.argsort(-np.abs(coeffFull))
+    print("  Top |coeff| terms (dense):")
+    for j in order[:12]:
+        if abs(coeffFull[j]) < 1e-9:
+            continue
+        print(f"    {LIB_NAMES[j]:16s}  {coeffFull[j]:+.4g}")
+
+    # Designed ODE subspace: a = k x(1-r^2) - d v + g theta*c
+    # in this library: k*x + (-k)*x*r^2 + (-d)*vx + g*theta*c
+    designed = ['x', 'x*r^2', 'vx', 'theta*c']
+    dIdx = [LIB_NAMES.index(n) for n in designed if active[LIB_NAMES.index(n)]]
+    if len(dIdx) >= 3:
+        Ad = A[:, dIdx]
+        cd = np.linalg.lstsq(Ad, b, rcond = None)[0]
+        predD = Ad @ cd
+        r2D = rSquared(b, predD)
+        print(f"  Designed ODE subspace {designed}: R^2={r2D:.3f}")
+        for n, c in zip([LIB_NAMES[i] for i in dIdx], cd):
+            print(f"    {n:16s}  {c:+.4g}")
+        nameToC = {LIB_NAMES[i]: c for i, c in zip(dIdx, cd)}
+        if 'x' in nameToC and 'x*r^2' in nameToC:
+            print(f"    implied k from 'x': {nameToC['x']:+.4g}, "
+                  f"from '-coeff(x*r^2)': {-nameToC['x*r^2']:+.4g}")
+        if 'vx' in nameToC:
+            print(f"    implied d = -coeff(vx): {-nameToC['vx']:+.4g}")
+        if 'theta*c' in nameToC:
+            print(f"    implied g = coeff(theta*c): {nameToC['theta*c']:+.4g}")
+
+    if doSindy:
+        coeffSp = np.zeros(len(LIB_NAMES))
+        coeffSp[active] = sindyFit(Aact, b, namesAct)
+        predSp = A @ coeffSp
+        r2Sp = rSquared(b, predSp)
+        nnz = int(np.sum(np.abs(coeffSp) > 0))
+        print(f"  SINDy-sparse R^2={r2Sp:.3f}, {nnz} active terms:")
+        orderSp = np.argsort(-np.abs(coeffSp))
+        for j in orderSp:
+            if abs(coeffSp[j]) < 1e-12:
+                continue
+            print(f"    {LIB_NAMES[j]:16s}  {coeffSp[j]:+.4g}")
+        return coeffFull, coeffSp, r2Full, r2Sp
+
+    return coeffFull, None, r2Full, None
+
+coeffOnDense, coeffOnSp, r2OnDense, r2OnSp = reportForceFit(
+    onPairs, "Force-on library fit", doSindy = True,
+)
+coeffOffDense, coeffOffSp, r2OffDense, r2OffSp = reportForceFit(
+    offPairs, "Force-off library fit", doSindy = True,
+)
+
+# Coefficient comparison bar chart (force-on dense, top terms)
+libFig, libAx = plt.subplots(figsize = (9, 4))
+orderPlot = np.argsort(-np.abs(coeffOnDense))[:15]
+namesPlot = [LIB_NAMES[j] for j in orderPlot]
+valsPlot = coeffOnDense[orderPlot]
+colors = ['tab:red' if n in ('theta*c', 'x', 'x*r^2', 'vx') else 'tab:blue'
+          for n in namesPlot]
+libAx.barh(range(len(namesPlot))[::-1], valsPlot[::-1], color = colors[::-1])
+libAx.set_yticks(range(len(namesPlot)))
+libAx.set_yticklabels(namesPlot[::-1])
+libAx.axvline(0.0, color = 'k', lw = 0.8)
+libAx.set_xlabel('Coefficient in a ≈ sum c_k f_k')
+libAx.set_title(f'Force-on library terms (dense fit, $R^2={r2OnDense:.2f}$; '
+                f'red = designed ODE)')
+libFig.tight_layout()
+libFig.savefig('odeForceLibrary.pdf')
+libFig.show()
+
+
+'''
+HYPOTHESIS: measurement force is g (1 + u - phi) n, not g theta_logged n
+
+u = x c + y s (natural units). Compare nested one-step acceleration models
+on force-on data, and check whether logged theta matches 1 + u - phi.
+'''
+
+print("\n--- Hypothesis: force ~ (1 + u - phi) * n ---")
+
+# phi is commanded/stored per sample; use soft-averaged only if we want — keep raw ph
+# aligned with causal state at index i
+phiSoft = movingAverage(ph, softWin)  # mild smooth for consistency with other channels
+
+def hypTargets(pairs):
+    """Measured a_x, a_y from causal Delta v / dt."""
+    axm, aym = [], []
+    for i in pairs:
+        dtStep = t[i + 1] - t[i]
+        if dtStep <= 0 or not np.isfinite(vxC[i + 1]):
+            continue
+        axm.append((vxC[i + 1] - vxC[i]) / dtStep)
+        aym.append((vyC[i + 1] - vyC[i]) / dtStep)
+    return np.asarray(axm), np.asarray(aym)
+
+def hypDesign(pairs, thetaMode, phiScale = 1.0, phiOffset = 0.0):
+    """
+    Columns for stacked [a_x; a_y]:
+      [x(1-r^2), -vx,  f * c ] and mirrored for y
+    where f depends on thetaMode.
+    """
+    rows = []
+    targets = []
+    extras = []  # store f used, u, phi, theta for diagnostics
+    for i in pairs:
+        dtStep = t[i + 1] - t[i]
+        if dtStep <= 0 or not np.isfinite(vxC[i + 1]):
+            continue
+        qx, qy = xSoft[i], ySoft[i]
+        vx, vy = vxC[i], vyC[i]
+        cx, sy = cEff[i], sEff[i]
+        r2v = qx * qx + qy * qy
+        u = qx * cx + qy * sy
+        phiV = phiSoft[i] * phiScale + phiOffset
+        thLog = thSoft[i]
+
+        if thetaMode == 'logged':
+            f = thLog
+        elif thetaMode == '1+u-phi':
+            f = 1.0 + u - phiV
+        elif thetaMode == 'u-phi':
+            f = u - phiV
+        elif thetaMode == '1+u':
+            f = 1.0 + u
+        else:
+            raise ValueError(thetaMode)
+
+        # a_x row
+        rows.append((qx * (1.0 - r2v), -vx, f * cx))
+        targets.append((vxC[i + 1] - vxC[i]) / dtStep)
+        # a_y row
+        rows.append((qy * (1.0 - r2v), -vy, f * sy))
+        targets.append((vyC[i + 1] - vyC[i]) / dtStep)
+        extras.append((f, u, phiV, thLog, cx, sy))
+
+    return (np.asarray(rows, dtype = float),
+            np.asarray(targets, dtype = float),
+            extras)
+
+def fitHyp(pairs, thetaMode, label, phiScale = 1.0, phiOffset = 0.0):
+    A, b, extras = hypDesign(pairs, thetaMode, phiScale, phiOffset)
+    coeff, _, _, _ = np.linalg.lstsq(A, b, rcond = None)
+    pred = A @ coeff
+    r2 = rSquared(b, pred)
+    kH, dH, gH = coeff
+    print(f"{label}:")
+    print(f"  k={kH:.4g}, d={dH:.4g}, g={gH:.4g},  R^2={r2:.3f}, "
+          f"RMS={np.sqrt(np.mean((b - pred)**2)):.4g}")
+    return dict(coeff = coeff, r2 = r2, pred = pred, meas = b, extras = extras, A = A)
+
+# Compare core hypotheses on force-on
+print("Force-on nested models a = k q(1-r^2) - d v + g f n:")
+fitLog = fitHyp(onPairs, 'logged', "  f = theta_logged")
+fitHyp1 = fitHyp(onPairs, '1+u-phi', "  f = 1 + u - phi_logged")
+fitHyp2 = fitHyp(onPairs, 'u-phi', "  f = u - phi_logged")
+fitHyp3 = fitHyp(onPairs, '1+u', "  f = 1 + u  (ignore phi)")
+
+# Free linear f = b0 + b1 u + b2 phi  (does data want 1, +u, -phi?)
+rowsF, targsF = [], []
+for i in onPairs:
+    dtStep = t[i + 1] - t[i]
+    if dtStep <= 0 or not np.isfinite(vxC[i + 1]):
+        continue
+    qx, qy = xSoft[i], ySoft[i]
+    vx, vy = vxC[i], vyC[i]
+    cx, sy = cEff[i], sEff[i]
+    r2v = qx * qx + qy * qy
+    u = qx * cx + qy * sy
+    phiV = phiSoft[i]
+    # a_x: [q(1-r2), -v, 1*n, u*n, phi*n]
+    rowsF.append((qx * (1.0 - r2v), -vx, cx, u * cx, phiV * cx))
+    targsF.append((vxC[i + 1] - vxC[i]) / dtStep)
+    rowsF.append((qy * (1.0 - r2v), -vy, sy, u * sy, phiV * sy))
+    targsF.append((vyC[i + 1] - vyC[i]) / dtStep)
+AF = np.asarray(rowsF)
+bF = np.asarray(targsF)
+cF = np.linalg.lstsq(AF, bF, rcond = None)[0]
+predF = AF @ cF
+r2F = rSquared(bF, predF)
+print("  f = b0 + b1 u + b2 phi  (free), via g*f*n expanded:")
+print(f"    k={cF[0]:.4g}, d={cF[1]:.4g}, g*b0={cF[2]:.4g}, g*b1={cF[3]:.4g}, "
+      f"g*b2={cF[4]:.4g},  R^2={r2F:.3f}")
+if abs(cF[2]) > 1e-12:
+    print(f"    implied (b0, b1, b2) ~ (1, {cF[3]/cF[2]:.3f}, {cF[4]/cF[2]:.3f}) "
+          f"if normalized to b0=1;  hypothesis (1,+1,-1)")
+
+# Try phi rescaled to roughly [0, 2] as in the math ODE
+phiMaxLog = float(np.max(ph))
+phiMinLog = float(np.min(ph[ph > 0])) if np.any(ph > 0) else 0.0
+print(f"\nLogged phi range: [{np.min(ph):.4g}, {np.max(ph):.4g}]")
+for scaleName, scale in [
+    ('phi as logged', 1.0),
+    ('phi * (2/phiMax)', 2.0 / phiMaxLog if phiMaxLog > 0 else 1.0),
+    ('phi * 5 (volts)', 5.0),
+    ('phi * (2/0.36)', 2.0 / 0.36),
+]:
+    fitHyp(onPairs, '1+u-phi', f"  f=1+u-phi with {scaleName}", phiScale = scale)
+
+# Does theta_logged track 1+u-phi?
+uOn = []
+phiOn = []
+thOn = []
+hypOn = []
+for i in onPairs:
+    cx, sy = cEff[i], sEff[i]
+    u = xSoft[i] * cx + ySoft[i] * sy
+    uOn.append(u)
+    phiOn.append(phiSoft[i])
+    thOn.append(thSoft[i])
+    hypOn.append(1.0 + u - phiSoft[i])
+uOn, phiOn, thOn, hypOn = map(np.asarray, (uOn, phiOn, thOn, hypOn))
+corr = np.corrcoef(thOn, hypOn)[0, 1]
+print(f"\ntheta_logged vs 1+u-phi_logged: corr={corr:.3f}, "
+      f"RMSE={np.sqrt(np.mean((thOn - hypOn)**2)):.3f}")
+print(f"  mean theta_logged={np.mean(thOn):.3f}, mean(1+u-phi)={np.mean(hypOn):.3f}")
+print(f"  best affine theta ≈ a + b(1+u-phi): ", end = '')
+Ba = np.column_stack((np.ones_like(hypOn), hypOn))
+ab = np.linalg.lstsq(Ba, thOn, rcond = None)[0]
+print(f"a={ab[0]:.3f}, b={ab[1]:.3f}, R^2={rSquared(thOn, Ba @ ab):.3f}")
+
+# Scatter theta vs hypothesis
+thFig, thAx = plt.subplots()
+thAx.scatter(hypOn, thOn, s = 6, alpha = 0.2, label = 'force-on samples')
+lims = [min(hypOn.min(), thOn.min()), max(hypOn.max(), thOn.max())]
+thAx.plot(lims, lims, 'k--', lw = 1, label = 'equality')
+thAx.plot(lims, ab[0] + ab[1] * np.asarray(lims), 'r-', lw = 1, label = 'affine fit')
+thAx.set_xlabel(r'$1 + u - \phi_{\mathrm{logged}}$')
+thAx.set_ylabel(r'$\theta_{\mathrm{logged}}$')
+thAx.set_title(r'Does logged $\theta$ match $1+u-\phi$?')
+thAx.legend()
+thFig.tight_layout()
+thFig.savefig('odeThetaHypothesis.pdf')
+thFig.show()
+
+# Model comparison bar chart
+hypFig, hypAx = plt.subplots()
+namesH = ['theta_logged', '1+u-phi', 'u-phi', '1+u', 'free b0+b1 u+b2 phi']
+r2sH = [fitLog['r2'], fitHyp1['r2'], fitHyp2['r2'], fitHyp3['r2'], r2F]
+hypAx.barh(namesH[::-1], r2sH[::-1], color = 'tab:purple')
+hypAx.set_xlabel(r'$R^2$ of acceleration model')
+hypAx.set_title(r'Force model: $a=kq(1-r^2)-dv+g f\,n$')
+hypFig.tight_layout()
+hypFig.savefig('odeForceHypothesisCompare.pdf')
+hypFig.show()
+
+
+'''
 ANIMATIONS
 '''
 
