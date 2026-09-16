@@ -27,19 +27,22 @@ const int N = 10; //Number of phi samples (and trials per angle). Sets precision
 const int m = 10; //Number of angles to measure probabilities on.
 
 // Phi sweep: PWM 0 → -5 V, PWM 255 → +5 V.
-// Endpoints are calibrated from the measured theta transfer so theta changes sign
-// exactly across the sweep at relative angles 0 and pi (see the THETA CALIBRATION
-// section of mqDataAnalysis.py, which prints updated values from each log).
-// From the 09-15-2026 log (with a unit-length axis): phi in [0.0345, 0.381] of 5 V.
-// Re-derive after any hardware change (e.g. AD633 offset trimming).
-// (PWM resolution is ~39 mV per step, so a few mV here doesn't matter.)
+// Endpoints from circuit analysis (not a fit to data):
+//   theta circuit: V_theta = (50/47)(1 + u) - V_phi,  u = x c + y s  (fractions of 5 V)
+//   The radial circuit settles at r^2 = 14/19 (not 1), so with a unit axis
+//   u ranges over [-R_EQ, +R_EQ], R_EQ = sqrt(14/19) ≈ 0.858.
+//   theta changes sign at V_phi = (50/47)(1 + u), so the sweep must span
+//   V_phi in [(50/47)(1 - R_EQ), (50/47)(1 + R_EQ)] = [0.151, 1.977] V,
+//   i.e. phi in [0.03013, 0.39540] of 5 V.
+// The THETA CALIBRATION section of mqDataAnalysis.py cross-checks these against
+// the measured theta transfer. (PWM resolution is ~39 mV per step.)
 const float V_RAIL = 5.0;      // Full-scale op-amp voltage at the PWM extremes
-const float V_PHI_LO = 0.173;  // Calibrated sweep low (V)
-const float V_PHI_HI = 1.905;  // Calibrated sweep high (V)
-const float V_CLIP = 0.05;    // Used by setXY to park phi slightly below 0 V
+const float R_EQ = sqrt(14.0 / 19.0);  // Equilibrium radius set by the 1-r^2 circuit
+const float THETA_GAIN = 10.0 / 47.0;  // (50/47 V) / V_RAIL: theta-circuit scale in units of 5 V
+const float V_CLIP = 0.05;     // Used by setXY to park phi slightly below 0 V
 // Stored/commanded phi is in units of V_RAIL (same as c/s), so 0 V → 0, 5 V → 1
-const float phiMin = V_PHI_LO / V_RAIL;
-const float phiMax = V_PHI_HI / V_RAIL;
+const float phiMin = THETA_GAIN * (1.0 - R_EQ);  // 0.03013 (0.151 V)
+const float phiMax = THETA_GAIN * (1.0 + R_EQ);  // 0.39540 (1.977 V)
 
 // Measurement tracking
 float c = 0;
@@ -212,8 +215,8 @@ void setup() {
   Serial.begin(baudRate);
 
   // Print metadata ("fw vN" tells mqDataAnalysis.py which corrections apply)
-  // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, calibrated phi sweep
-  Serial.println("Voltages are recorded as fractions of 5V (fw v3: theta = V_theta/5V, settled reads, unit axis, calibrated phi)");
+  // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, circuit-derived phi sweep
+  Serial.println("Voltages are recorded as fractions of 5V (fw v3: theta = V_theta/5V, settled reads, unit axis, circuit-derived phi sweep)");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }
