@@ -100,6 +100,7 @@ void setXY(float xIn, float yIn) {
 
 void readState() {
   t = millis() / 1000.0;
+  analogRead(thetPin); //Dummy read to address internal capacitor timing
   float thetaRaw = analogRead(thetPin) / 1023.0;
   float xRaw = analogRead(xPin) / 1023.0;
   float yRaw = analogRead(yPin) / 1023.0;
@@ -312,6 +313,12 @@ void pollSerial() {
 }
 
 void setup() {
+
+  // To avoid floating analog pins, it is imperative to set them up as inputs
+  pinMode(thetPin, INPUT);
+  pinMode(xPin, INPUT);
+  pinMode(yPin, INPUT);
+
   Serial.begin(9600);
   measureOff();
   setPhi(0.0);
