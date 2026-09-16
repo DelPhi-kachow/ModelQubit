@@ -20,17 +20,26 @@ const int yPin = A3;
 
 // Other parameters
 const int dt = 50; //The number of milliseconds between consecutive readings
+const int settleMs = 50; //Wait after switching c/s so the 100k*100nF (10 ms) PWM filter settles (~5 tau)
+const int printDigits = 4; //Decimal places in serial output (Serial.print default is 2 -> 0.01 steps)
+const long baudRate = 115200; //At 9600 baud one ~60-char line takes ~60 ms to send; set the logger to match
 const int N = 10; //Number of phi samples (and trials per angle). Sets precision of measured probabilities.
 const int m = 10; //Number of angles to measure probabilities on.
 
-// Phi sweep: PWM 0 → -5 V, PWM 255 → +5 V. We only use the old triangle range.
-const float V_RAIL = 5.0;     // Full-scale op-amp voltage at the PWM extremes
-const float V_PHI_LO = 0.0;   // Intended sweep low (V)
-const float V_PHI_HI = 1.848; // Intended sweep high (V)
-const float V_CLIP = 0.05;   // Clip both ends to avoid unphysical levels
+// Phi sweep: PWM 0 → -5 V, PWM 255 → +5 V.
+// Endpoints are calibrated from the measured theta transfer so theta changes sign
+// exactly across the sweep at relative angles 0 and pi (see the THETA CALIBRATION
+// section of mqDataAnalysis.py, which prints updated values from each log).
+// From the 09-15-2026 log (with a unit-length axis): phi in [0.0345, 0.381] of 5 V.
+// Re-derive after any hardware change (e.g. AD633 offset trimming).
+// (PWM resolution is ~39 mV per step, so a few mV here doesn't matter.)
+const float V_RAIL = 5.0;      // Full-scale op-amp voltage at the PWM extremes
+const float V_PHI_LO = 0.173;  // Calibrated sweep low (V)
+const float V_PHI_HI = 1.905;  // Calibrated sweep high (V)
+const float V_CLIP = 0.05;    // Used by setXY to park phi slightly below 0 V
 // Stored/commanded phi is in units of V_RAIL (same as c/s), so 0 V → 0, 5 V → 1
-const float phiMin = (V_PHI_LO + V_CLIP) / V_RAIL;
-const float phiMax = (V_PHI_HI - V_CLIP) / V_RAIL;
+const float phiMin = V_PHI_LO / V_RAIL;
+const float phiMax = V_PHI_HI / V_RAIL;
 
 // Measurement tracking
 float c = 0;
@@ -54,9 +63,20 @@ void setAxis_rel(float angle) {
   float cPrime = cos(angle);
   float sPrime = sin(angle);
 
+  //Normalize the current state so (c, s) is a unit vector (5 V axis).
+  //Logged x, y sit at |r| ~ 0.87 (14/19 bias), which would otherwise shrink the axis.
+  float r = sqrt(x * x + y * y);
+  if (r < 0.1) {
+    //State too close to the origin to define a direction; fall back to absolute angle
+    setAxis_abs(angle);
+    return;
+  }
+  float xn = x / r;
+  float yn = y / r;
+
   //angle addition
-  c = (x * cPrime) - (y * sPrime);
-  s = (y * cPrime) + (x * sPrime);
+  c = (xn * cPrime) - (yn * sPrime);
+  s = (yn * cPrime) + (xn * sPrime);
 }
 
 // Set phi (normalized to ±V_RAIL, same scaling as c/s: -1 → -5 V, +1 → +5 V)
@@ -112,9 +132,11 @@ void readState() {
   float xRaw = analogRead(xPin) / 1023.0;
   float yRaw = analogRead(yPin) / 1023.0;
 
-  //Convert raw readings to appropriate coordinates
+  //Convert raw readings to appropriate coordinates (all stored as V / 5V)
   //A lot of the complexity here is because there is a level shifting circuit to deal with negative voltages
-  theta = 2.0 * thetaRaw - 1.0;
+  //theta interface: V_pin = 2V + 0.8*V_theta  ->  V_theta/5V = (thetaRaw - 0.4) / 0.8
+  theta = 1.25 * thetaRaw - 0.5;
+  //x, y interface: V_pin = 2.5V + 0.5*V_x  ->  V_x/5V = 2*xRaw - 1
   x = 2.0 * xRaw - 1.0;
   y = 2.0 * yRaw - 1.0;
 }
@@ -126,7 +148,7 @@ void tellState() {
 
   // Print each element of the array
   for (int i = 0; i < 8; i++) {
-    Serial.print(state[i]);
+    Serial.print(state[i], printDigits);
     Serial.print(", ");
   }
   //End line
@@ -154,10 +176,12 @@ void measurements(int N) {
 void trial() {
   // Turn measurement on
   measureOn();
+  delay(settleMs); //Let c/s reach their set values so the first theta reading is valid
   measurements(20); //Record
 
   // Turn measurement off
-  measureOff(); 
+  measureOff();
+  delay(settleMs);
   measurements(20); //Record
 }
 
@@ -185,10 +209,11 @@ void setup() {
   // Setup pins
 
   // Begin serial
-  Serial.begin(9600);
+  Serial.begin(baudRate);
 
-  // Print metadata
-  Serial.println("Voltages are recorded as fractions of 5V");
+  // Print metadata ("fw vN" tells mqDataAnalysis.py which corrections apply)
+  // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, calibrated phi sweep
+  Serial.println("Voltages are recorded as fractions of 5V (fw v3: theta = V_theta/5V, settled reads, unit axis, calibrated phi)");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }

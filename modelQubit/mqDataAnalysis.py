@@ -11,12 +11,13 @@ show via plots that it properly recreates the statistics of a qubit.
 #Library imports 
 import csv
 import os
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = 'modelQubit_09-05-2026_231938_noclip.log'
+fname = 'modelQubit_09-15-2026_165442.log'
 
 '''
 TAKE IN THE DATA
@@ -30,9 +31,12 @@ with open(fname, 'r') as f:
     #Create a reader object
     fRead = csv.reader(f)
     
-    #Skip the headers
+    #Read the headers (first line identifies the firmware version)
+    headerLine = ','.join(next(fRead))
     next(fRead)
-    next(fRead)
+    fwMatch = re.search(r'fw v(\d+)', headerLine)
+    fwVer = int(fwMatch.group(1)) if fwMatch else 1
+    fwV2 = fwVer >= 2
     
     #Record data
     for row in fRead:
@@ -55,6 +59,33 @@ th = np.array(th)
 ph = np.array(ph)
 x = np.array(x)
 y = np.array(y)
+
+'''
+FIRMWARE-VERSION CORRECTIONS
+
+Old firmware (before fw v2):
+  - converted theta with 2*raw - 1 (the x/y level shifter), but the theta
+    interface is V_pin = 2V + 0.8 V_theta. Correct: theta = V_theta/5V
+    = 1.25*raw - 0.5 = 0.625*theta_old + 0.125.
+  - printed 2 decimals, so logged values move in 0.01 steps.
+  - read immediately after switching c/s, before the 10 ms PWM filter
+    settled, so the first force-on theta is still the force-off theta.
+fw v2 fixes all three in firmware (4 decimals, settle delay).
+'''
+if fwV2:
+    printStep = 1e-4
+    thetaLag = 0  # first force-on sample is already settled
+else:
+    th = 0.625 * th + 0.125
+    printStep = 0.01
+    thetaLag = 2  # skip the unsettled samples when reading theta_0
+# Logged position resolution (fraction of 5V): coarser of ADC and print steps
+logStep = max(2.0 / 1023.0, printStep)
+print(f"Firmware: {f'v{fwVer}' if fwV2 else 'pre-v2 (theta converted, 2-decimal log)'}; "
+      f"logged position step = {logStep:.4g}")
+
+# measureOff() writes PWM 128, which is +1/255 of full scale above 0 V
+C_OFF = 2.0 * 128.0 / 255.0 - 1.0
 
 
 '''
@@ -231,6 +262,81 @@ print("Reduced chi-squared: %0.2f" %redChi)
 
 
 '''
+THETA CALIBRATION AND BORN-RULE PREDICTION
+
+Fit the theta circuit's actual transfer on settled force-on samples:
+  theta = a0 + b u + g phi,   u = x c + y s   (all in fractions of 5 V)
+The ideal circuit has theta ∝ 1 + cos(D) - phi_nat, so with a unit axis and
+the state at radius R (the 14/19 artifact), theta changes sign at
+  phi = (a0 + b R cos D) / |g|.
+A uniform phi sweep reproduces the Born rule exactly when it spans
+  [ (a0 - b R)/|g| , (a0 + b R)/|g| ],
+which is what the firmware's V_PHI_LO / V_PHI_HI should be set to.
+'''
+print("\n--- Theta calibration ---")
+calIdx = []
+for a_, b_ in mIndices:
+    onIdx = a_ + np.where(of[a_:b_ + 1])[0]
+    calIdx += list(onIdx if fwV2 else onIdx[1:])  # skip unsettled sample on old logs
+calIdx = np.array(calIdx, dtype = int)
+uCal = x[calIdx] * c[calIdx] + y[calIdx] * s[calIdx]
+Acal = np.column_stack((np.ones(len(calIdx)), uCal, ph[calIdx]))
+calCo, _, _, _ = np.linalg.lstsq(Acal, th[calIdx], rcond = None)
+a0Cal, bCal, gCal = calCo
+calRes = th[calIdx] - Acal @ calCo
+calR2 = 1.0 - np.var(calRes) / np.var(th[calIdx])
+rMed = float(np.median(np.hypot(x, y)))
+axisMag = float(np.median(np.hypot(c[calIdx], s[calIdx])))
+print(f"theta = {a0Cal:.4f} + {bCal:.4f} u + {gCal:.4f} phi  "
+      f"(R^2 = {calR2:.4f}, rms = {np.std(calRes):.4f})")
+print(f"state radius R = {rMed:.3f}, logged axis length |(c,s)| = {axisMag:.3f}")
+bEff = bCal * rMed * axisMag  # cos(D) coefficient as this log was run
+print(f"cos(D) coefficient / constant: this log {bEff / a0Cal:.3f}, "
+      f"with unit axis {bCal * rMed / a0Cal:.3f}  (ideal 1)")
+phiLoRec = (a0Cal - bCal * rMed) / abs(gCal)
+phiHiRec = (a0Cal + bCal * rMed) / abs(gCal)
+print(f"Recommended phi sweep (unit axis): [{phiLoRec:.4f}, {phiHiRec:.4f}] of 5 V "
+      f"-> V_PHI_LO = {5 * phiLoRec:.3f} V, V_PHI_HI = {5 * phiHiRec:.3f} V")
+phiLoLog, phiHiLog = float(np.min(ph[calIdx])), float(np.max(ph[calIdx]))
+print(f"This log swept phi over [{phiLoLog:.4f}, {phiHiLog:.4f}] "
+      f"({len(np.unique(np.round(ph[calIdx], 4)))} values)")
+
+# Predicted P(up) for this log's settings: continuous sweep and the actual phi values
+def predictUp(Dgrid, phiVals):
+    thr = (a0Cal + bEff * np.cos(Dgrid))[:, None] + gCal * phiVals[None, :]
+    return np.mean(thr > 0, axis = 1)
+
+phiCont = np.linspace(phiLoLog, phiHiLog, 4001)
+phiDisc = np.unique(ph[calIdx])
+predCont = predictUp(thetaDom, phiCont)
+predDiscBins = predictUp(binThets, phiDisc)
+predContBins = predictUp(binThets, phiCont)
+idealBins = np.cos(0.5 * binThets)**2
+rmsData = np.sqrt(np.nanmean((probs - idealBins)**2))
+rmsCal = np.sqrt(np.mean((predContBins - idealBins)**2))
+rmsDisc = np.sqrt(np.nanmean((probs - predDiscBins)**2))
+print(f"RMS deviation from Born rule: data {rmsData:.3f}; "
+      f"calibration alone (continuous phi) {rmsCal:.3f}; "
+      f"data vs discrete-phi prediction {rmsDisc:.3f}")
+
+calFig, calAx = plt.subplots()
+calAx.plot(thetaDom, ideal, label = 'Born rule')
+calAx.plot(thetaDom, predCont, 'k--', lw = 1,
+           label = 'predicted, continuous $\\phi$ (this calibration)')
+calAx.plot(binThets, predDiscBins, 's', mfc = 'none', color = 'gray',
+           label = f'predicted, {len(phiDisc)} $\\phi$ values')
+calAx.plot(binThets[valid], probs[valid], '.', color = 'red', markersize = 14,
+           label = 'empirical')
+calAx.set_xlabel("Relative angle (rad)")
+calAx.set_ylabel("Up probability")
+calAx.set_title('Empirical vs calibration-predicted up probability')
+calAx.legend(fontsize = 8)
+calFig.tight_layout()
+calFig.savefig('bornCalibration.pdf')
+calFig.show()
+
+
+'''
 ODE FIDELITY: does (x, y) collapse to sign(theta) * (c, s)?
 
 Measurement force is the on/off column (of), not (c, s) leaving (0, 0).
@@ -238,8 +344,9 @@ Within each cycle, (c, s) stays fixed at the axis while of is True for the
 first half (force on) and False for the second; (c, s) = (0, 0) only appears
 at the start of the log before the first measurement.
 
-Predictor: sign of raw logged theta at the first force-on sample (the analog
-computer's theta voltage), not the mean over the collapse window.
+Predictor: sign of logged theta (corrected conversion) at the first force-on
+sample after c/s have settled (thetaLag samples in for pre-v2 logs), not the
+mean over the collapse window.
 '''
 
 def wrapAngle(a):
@@ -264,8 +371,8 @@ for start, end in mIndices:
     startIdx = start + onIdx[0]
     forceIdx = start + onIdx[-1]
 
-    # Raw theta at the start of the collapse (analog theta voltage)
-    th0 = th[startIdx]
+    # Theta at the start of the collapse, once c/s have settled (see thetaLag)
+    th0 = th[min(startIdx + thetaLag, forceIdx)]
     initThetas.append(th0)
 
     # Final state: last sample while measurement force is on
@@ -295,7 +402,7 @@ successPct = 100.0 * nOk / nFid if nFid else float('nan')
 print("\n--- ODE collapse fidelity ---")
 ofFrac = float(np.mean([of[a:b + 1].mean() for a, b in mIndices]))
 print(f"Force-on window: of == True ({100.0 * ofFrac:.0f}% of each cycle on average)")
-print(f"Predictor: sign of raw theta at force-on start")
+print(f"Predictor: sign of theta {thetaLag} samples after force-on start")
 print(f"|theta_0|: success={np.mean(np.abs(initThetas[success])):.3f}, "
       f"fail={np.mean(np.abs(initThetas[~success])):.3f}")
 print(f"Collapse success (within +/- {angleTolDeg:.0f} deg of sign(theta_0)*(c,s)): "
@@ -333,27 +440,38 @@ Model (analog computer), in natural units where the circle is r = 1:
   dv_x/dt = k x (1 - r^2) - d v_x + theta * c
   dv_y/dt = k y (1 - r^2) - d v_y + theta * s
 
-Logged x, y, c, s are ADC fractions of 5 V with observed |r| ≈ 0.87, not 1, so
-(1 - r_ADC^2) does not vanish on the physical circle. Rescale
-  (x, y, c, s)_nat = (x, y, c, s)_ADC / R_obs
+Logged x, y are ADC fractions of 5 V with observed |r| ≈ 0.87 (the 14/19
+bias in the 1-r^2 circuit), so (1 - r_ADC^2) does not vanish on the physical
+circle. Rescale
+  (x, y)_nat = (x, y)_ADC / R_obs
 with R_obs = median |r|_ADC, then fit in natural units:
   a ≈ k q (1 - r_nat^2) - d v + g theta n_eff
-Theta keeps its own voltage scale; g absorbs that mismatch.
+Theta and c, s keep their own voltage scales; g absorbs that mismatch.
 
 v is not logged: estimate v and a = dv/dt from finite differences in t.
-Firmware: when of is False, measureOff() drives c/s pins to 0 V, but the log
-still stores the software axis. Use n_eff = of * (c, s)_nat.
+Firmware: when of is False, measureOff() writes PWM 128 (≈ +0.0039 of 5 V),
+but the log still stores the software axis. Use n_eff = (c, s) when on and
+(C_OFF, C_OFF) when off.
+
+CAVEAT: in the circuit the velocity stage (1 kΩ || 10 nF) has a 10 µs time
+constant, so v follows its inputs instantly and the position integrator
+(1 MΩ, 10 nF) sets a 10 ms time scale. At ~60 ms sampling these
+acceleration-based fits cannot resolve the dynamics; they are kept for
+reference. See the FIRST-ORDER sections at the end for the fits that match
+the circuit.
 '''
 
 # Observed circle radius in logged (ADC fraction) units
 rAdc = np.sqrt(x**2 + y**2)
 Robs = float(np.median(rAdc))
 xN, yN = x / Robs, y / Robs
-cN, sN = c / Robs, s / Robs
+# c, s are commanded drive voltages (fraction of 5V); the 14/19 radius
+# artifact lives in the 1-r^2 circuit, so c, s are NOT rescaled by R_obs.
 
-# Effective measurement axis on the wires (natural units)
-cEff = cN * of.astype(float)
-sEff = sN * of.astype(float)
+# Effective measurement axis on the wires: commanded axis when on,
+# the PWM-128 offset when off
+cEff = np.where(of, c, C_OFF)
+sEff = np.where(of, s, C_OFF)
 
 # Finite-difference kinematics in natural units
 vx = np.gradient(xN, t)
@@ -966,13 +1084,13 @@ nOffParams = 2
 nuOffSigma = nOffObs - nOffParams
 chi2OffCal = sum(np.sum((chOff[lab] / sigmas[lab])**2) for lab in STATE_LABELS)
 
-adcStepNat = (2.0 / 1023.0) / Robs
+adcStepNat = logStep / Robs
 print(f"Force-off one-step pairs: {len(offPairs)}")
 print(f"Force-off ODE fit (k, d only): k={kOff:.3g}, d={dOff:.3g}")
 print(f"Tight sigmas (q and v) after force-off k,d fit:")
 for lab in STATE_LABELS:
     print(f"  sigma_{lab} = {sigmas[lab]:.4g}")
-print(f"ADC position step (natural units): {adcStepNat:.4g}")
+print(f"Logged position step (natural units): {adcStepNat:.4g}")
 print(f"Force-off chi^2_red (calibration): {chi2OffCal / nuOffSigma:.3f}  "
       f"(nu={nuOffSigma})")
 
@@ -1206,11 +1324,30 @@ def sindyFit(A, b, names, nThresh = 8, threshFrac = 0.05):
         coeff = coeff2
     return coeff
 
-def reportForceFit(pairs, label, doSindy = True):
+def reportForceFit(pairs, label, doSindy = True, dropAxis = False):
     A, b = buildForceSystem(pairs)
     # Drop near-collinear empty columns (e.g. c,s during force-off)
     colStd = np.std(A, axis = 0)
     active = colStd > 1e-9
+    if dropAxis:
+        # Force-off: the axis is only the tiny constant PWM offset, so terms
+        # built from c, s, u are either duplicates or scaled-up noise fits.
+        for j, n in enumerate(LIB_NAMES):
+            if set(n.split('*')) & {'c', 's', 'u'}:
+                active[j] = False
+    # Also drop columns that are (near) linear combinations of earlier ones.
+    # During force-off, c = s = C_OFF is constant, so e.g. theta*c is just
+    # C_OFF*theta and u*x duplicates x^2 + xy terms; keeping them makes the
+    # least-squares coefficients meaningless.
+    kept = []
+    for j in np.where(active)[0]:
+        trial = kept + [j]
+        Aj = A[:, trial] / np.linalg.norm(A[:, trial], axis = 0)
+        sv = np.linalg.svd(Aj, compute_uv = False)
+        if sv[-1] / sv[0] > 1e-6:
+            kept.append(j)
+        else:
+            active[j] = False
     Aact = A[:, active]
     namesAct = [n for n, a in zip(LIB_NAMES, active) if a]
 
@@ -1270,7 +1407,7 @@ coeffOnDense, coeffOnSp, r2OnDense, r2OnSp = reportForceFit(
     onPairs, "Force-on library fit", doSindy = True,
 )
 coeffOffDense, coeffOffSp, r2OffDense, r2OffSp = reportForceFit(
-    offPairs, "Force-off library fit", doSindy = True,
+    offPairs, "Force-off library fit", doSindy = True, dropAxis = True,
 )
 
 # Coefficient comparison bar chart (force-on dense, top terms)
@@ -1465,6 +1602,182 @@ hypAx.set_title(r'Force model: $a=kq(1-r^2)-dv+g f\,n$')
 hypFig.tight_layout()
 hypFig.savefig('odeForceHypothesisCompare.pdf')
 hypFig.show()
+
+
+'''
+FIRST-ORDER TANGENTIAL MODEL (matches the circuit time scales)
+
+With v slaved to its inputs, the circuit is first order:
+  dq/dt = (1/tau) * [radial(q) + (theta c, theta s) + F0]
+tau = 1 MΩ * 10 nF = 10 ms. At 60 ms sampling the radial part is always at
+equilibrium, so score the TANGENTIAL motion, where the radial force drops out:
+  r dpsi/dt = g theta (n_eff . t_hat) + F0 . t_hat,
+  t_hat = (-sin psi, cos psi)
+All quantities are in logged units (fraction of 5 V). Predicted from the
+schematic: AD633 W = V_theta V_c / 10 V, unity-gain velocity stage, so
+  g_pred = 5 V / (10 V * tau) = 50 /s,
+and a velocity-node offset V_off gives F0 = V_off / (5 V * tau).
+
+One fit covers both windows: force-on uses the commanded axis, force-off uses
+the PWM-128 offset (C_OFF, C_OFF). F0 is the drift from op-amp/multiplier
+offsets that is present whether or not a measurement is running.
+'''
+
+print("\n--- First-order tangential model (drift + measurement force) ---")
+TAU_PRED = 10e-3
+G_PRED = 5.0 / (10.0 * TAU_PRED)
+
+psiL = np.arctan2(y, x)
+rL = np.hypot(x, y)
+
+def tangentialRows(pairs):
+    """Midpoint-rule rows [theta n.t, t_x, t_y] and target r dpsi/dt."""
+    i = np.asarray(pairs, dtype = int)
+    j = i + 1
+    dtP = t[j] - t[i]
+    dpsi = wrapAngle(psiL[j] - psiL[i])
+    psiM = psiL[i] + 0.5 * dpsi
+    tx, ty = -np.sin(psiM), np.cos(psiM)
+    thM = 0.5 * (th[i] + th[j])
+    nDotT = cEff[i] * tx + sEff[i] * ty
+    rM = 0.5 * (rL[i] + rL[j])
+    A = np.column_stack((thM * nDotT, tx, ty))
+    b = rM * dpsi / dtP
+    return A, b, psiM, thM
+
+# Pairs with a constant on/off state; for pre-v2 logs, drop pairs whose
+# c/s drive was still settling (first sample of each on/off window)
+allI = np.arange(len(t) - 1)
+same = (of[allI] == of[allI + 1]) & (np.diff(t) > 0)
+settled = np.ones(len(t), dtype = bool)
+if not fwV2:
+    settled[1:] = of[1:] == of[:-1]
+pairOK = same & settled[allI]
+# Skip the pre-measurement stretch where c = s = 0 while of is True
+pairOK &= ~(of[allI] & (c[allI] == 0.0) & (s[allI] == 0.0))
+pOn = allI[pairOK & of[allI]]
+pOff = allI[pairOK & ~of[allI]]
+
+AOn1, bOn1, psiOn1, thOn1 = tangentialRows(pOn)
+AOff1, bOff1, psiOff1, thOff1 = tangentialRows(pOff)
+A1 = np.vstack((AOn1, AOff1))
+b1v = np.concatenate((bOn1, bOff1))
+co1 = np.linalg.lstsq(A1, b1v, rcond = None)[0]
+g1, F0x, F0y = co1
+print(f"Pairs: force-on {len(pOn)}, force-off {len(pOff)}")
+print(f"Joint fit: g = {g1:.3g} /s (schematic predicts {G_PRED:.0f} /s -> "
+      f"tau_eff = {5.0 / (10.0 * g1) * 1e3:.2f} ms)")
+print(f"  drift F0 = ({F0x:+.4f}, {F0y:+.4f}) /s  -> |F0| = {np.hypot(F0x, F0y):.4f} /s, "
+      f"attractor at {np.degrees(np.arctan2(F0y, F0x)):.1f} deg")
+print(f"  equivalent velocity-node offset (tau = 10 ms): "
+      f"({F0x * 5 * TAU_PRED * 1e3:+.2f}, {F0y * 5 * TAU_PRED * 1e3:+.2f}) mV")
+print(f"  R^2 force-on  = {rSquared(bOn1, AOn1 @ co1):.3f}")
+print(f"  R^2 force-off = {rSquared(bOff1, AOff1 @ co1):.3f}")
+
+# Force-on only / force-off only fits for comparison
+coOn1 = np.linalg.lstsq(AOn1, bOn1, rcond = None)[0]
+print(f"Force-on only:  g = {coOn1[0]:.3g}, F0 = ({coOn1[1]:+.4f}, {coOn1[2]:+.4f}), "
+      f"R^2 = {rSquared(bOn1, AOn1 @ coOn1):.3f}")
+coOff1 = np.linalg.lstsq(AOff1, bOff1, rcond = None)[0]
+print(f"Force-off only: g*C_OFF term g = {coOff1[0]:.3g}, F0 = ({coOff1[1]:+.4f}, "
+      f"{coOff1[2]:+.4f}), R^2 = {rSquared(bOff1, AOff1 @ coOff1):.3f}")
+
+# How big is the drift compared with the measurement force? Only count steps
+# still collapsing (state > ~17 deg from both poles), since the tangential
+# measurement force vanishes once the state reaches a pole.
+measTerm = np.abs(g1 * AOn1[:, 0])
+driftTerm = np.abs(AOn1[:, 1:] @ co1[1:])
+nMag = np.hypot(cEff[pOn], sEff[pOn])
+collapsing = np.abs(AOn1[:, 0]) > 0.3 * nMag * np.abs(thOn1)
+print(f"Force-on steps still collapsing: {int(np.sum(collapsing))}")
+print(f"  |measurement term| median {np.median(measTerm[collapsing]):.3f} /s, "
+      f"|drift term| median {np.median(driftTerm[collapsing]):.3f} /s; "
+      f"drift > measurement in {100 * np.mean(driftTerm[collapsing] > measTerm[collapsing]):.1f}% of them")
+print(f"  (median |theta| where drift wins: "
+      f"{np.median(np.abs(thOn1[collapsing & (driftTerm > measTerm)])):.3f}, "
+      f"elsewhere: {np.median(np.abs(thOn1[collapsing & (driftTerm <= measTerm)])):.3f})")
+
+# First-order trajectory prediction over each force-on window, driven by the
+# measured theta(t) and r(t) (replaces the second-order integration above,
+# whose fitted k is negative and unphysical)
+def integrateFirstOrder(i0, i1, gP, fx, fy, nSub = 10):
+    psiP = np.empty(i1 - i0 + 1)
+    psiP[0] = psiL[i0]
+    for k in range(i1 - i0):
+        i = i0 + k
+        h = (t[i + 1] - t[i]) / nSub
+        p = psiP[k]
+        for m in range(nSub):
+            w = (m + 0.5) / nSub
+            thW = (1 - w) * th[i] + w * th[i + 1]
+            rW = (1 - w) * rL[i] + w * rL[i + 1]
+            tx, ty = -np.sin(p), np.cos(p)
+            p += h * (gP * thW * (cEff[i] * tx + sEff[i] * ty) + fx * tx + fy * ty) / rW
+        psiP[k + 1] = p
+    return psiP
+
+traj1Err = []
+traj1Examples = []
+for ci, (start, end) in enumerate(mIndices):
+    onIdx = start + np.where(of[start:end + 1])[0]
+    if len(onIdx) < 4:
+        continue
+    i0 = onIdx[0] if fwV2 else onIdx[1]
+    i1 = onIdx[-1]
+    psiP = integrateFirstOrder(i0, i1, g1, F0x, F0y)
+    traj1Err.append(np.degrees(wrapAngle(psiP[-1] - psiL[i1])))
+    if len(traj1Examples) < 4 and ci >= 3:
+        traj1Examples.append((ci, t[i0:i1 + 1] - t[i0], psiL[i0:i1 + 1], psiP))
+traj1Err = np.array(traj1Err)
+print(f"First-order trajectory prediction ({len(traj1Err)} force-on windows):")
+print(f"  final angle error: median |.| = {np.median(np.abs(traj1Err)):.1f} deg, "
+      f"within +/- 20 deg: {100 * np.mean(np.abs(traj1Err) <= 20):.1f}%")
+
+t1Fig, t1Axes = plt.subplots(nrows = 1, ncols = 2, figsize = (9, 3.8))
+t1Axes[0].hist(traj1Err, bins = 36, range = (-180, 180), color = 'tab:blue', alpha = 0.8)
+t1Axes[0].axvline(0.0, color = 'k', ls = '--', lw = 1)
+t1Axes[0].set_xlabel(r'Final angle error $\psi_{\mathrm{pred}}-\psi_{\mathrm{meas}}$ (deg)')
+t1Axes[0].set_ylabel('Counts')
+for k, (ci, tt, pm, pp) in enumerate(traj1Examples):
+    col = f'C{k}'
+    t1Axes[1].plot(tt, np.degrees(np.unwrap(pm)), color = col, lw = 2,
+                   label = f'trial {ci}')
+    t1Axes[1].plot(tt, np.degrees(np.unwrap(pp)), color = col, ls = '--', lw = 1.5)
+t1Axes[1].set_xlabel('Time since force on (s)')
+t1Axes[1].set_ylabel(r'$\psi$ (deg); solid = measured, dashed = model')
+t1Axes[1].legend(fontsize = 8)
+t1Fig.suptitle('First-order model: force-on trajectories')
+t1Fig.tight_layout()
+t1Fig.savefig('odeTrajFirstOrder.pdf')
+t1Fig.show()
+
+# Drift plot: force-off tangential speed vs angle, binned, with model
+driftFig, driftAx = plt.subplots()
+edges = np.linspace(-np.pi, np.pi, 25)
+centers = 0.5 * (edges[1:] + edges[:-1])
+binMean = np.full(len(centers), np.nan)
+binSem = np.full(len(centers), np.nan)
+for k in range(len(centers)):
+    sel = (psiOff1 >= edges[k]) & (psiOff1 < edges[k + 1])
+    if np.sum(sel) > 2:
+        binMean[k] = np.mean(bOff1[sel])
+        binSem[k] = np.std(bOff1[sel]) / np.sqrt(np.sum(sel))
+driftAx.errorbar(np.degrees(centers), binMean, yerr = binSem, fmt = 'o',
+                 ms = 4, capsize = 3, label = 'force-off data (binned)')
+psiGrid = np.linspace(-np.pi, np.pi, 400)
+thOffMean = float(np.mean(thOff1))
+modelOff = (g1 * thOffMean * C_OFF * (np.cos(psiGrid) - np.sin(psiGrid))
+            - F0x * np.sin(psiGrid) + F0y * np.cos(psiGrid))
+driftAx.plot(np.degrees(psiGrid), modelOff, 'k-', lw = 1,
+             label = r'joint fit (mean $\theta$)')
+driftAx.axhline(0.0, color = 'gray', lw = 0.8)
+driftAx.set_xlabel(r'State angle $\psi$ (deg)')
+driftAx.set_ylabel(r'$r\,\dot\psi$ (fraction of 5 V per s)')
+driftAx.set_title('Drift with measurement off')
+driftAx.legend()
+driftFig.tight_layout()
+driftFig.savefig('driftOff.pdf')
+driftFig.show()
 
 
 '''

@@ -1,0 +1,229 @@
+Firmware: pre-v2 (theta converted, 2-decimal log); logged position step = 0.01
+Found 299 measurement cycles in modelQubit_09-15-2026_165442.log
+Using 299 measurements
+[29. 30. 30. 30. 30. 30. 30. 30. 30. 30.]
+Reduced chi-squared: 0.33
+
+--- Theta calibration ---
+theta = 0.2113 + 0.2023 u + -1.0170 phi  (R^2 = 0.9912, rms = 0.0181)
+state radius R = 0.871, logged axis length |(c,s)| = 0.865
+cos(D) coefficient / constant: this log 0.721, with unit axis 0.834  (ideal 1)
+Recommended phi sweep (unit axis): [0.0345, 0.3810] of 5 V -> V_PHI_LO = 0.173 V, V_PHI_HI = 1.905 V
+This log swept phi over [0.0100, 0.3600] (10 values)
+RMS deviation from Born rule: data 0.058; calibration alone (continuous phi) 0.032; data vs discrete-phi prediction 0.067
+
+--- ODE collapse fidelity ---
+Force-on window: of == True (50% of each cycle on average)
+Predictor: sign of theta 2 samples after force-on start
+|theta_0|: success=0.143, fail=0.027
+Collapse success (within +/- 20 deg of sign(theta_0)*(c,s)): 277/299 = 92.6%
+  among theta_0 >= 0: 222/222
+  among theta_0 <  0: 55/77
+
+--- ODE finite-difference residuals ---
+Rescaled to natural units by R_obs = median |r|_ADC = 0.871
+Samples used (interior): 11998 (5999 force-on); median dt = 0.060 s
+Fit a ≈ k q(1-r_nat^2) - d v + g theta n_eff  [all interior]:
+  k = 22,  d = -0.0421,  g = -1.22,  R^2 = 0.013
+  (k>0 => radial restoring toward unit circle; d>0 => drag)
+Fit same form [force-on only]:
+  k = 9.49,  d = -0.167,  g = -4.27,  R^2 = 0.011
+Fit a ≈ b1 q - b2 q r^2 - d v + g theta n_eff  [free radial target]:
+  b1 = 49.9,  b2 = 51.8,  d = 0.338,  g = 14
+  implied R_target^2 = b1/b2 = 0.965  (|R|_nat = 0.982),  R^2 = 0.039
+Residual std (all-interior unit-circle fit): 5.9
+
+--- ODE residuals with smoothed trajectories (natural units) ---
+window = 5 samples (~0.30 s):
+  unit-circle fit: k=-64.2, d=-0.568, g=-17.6, R^2=0.191, resid_std=3.37
+  force-on only:   k=-73.7, d=-0.588, g=-19.3, R^2=0.233
+  free radial:     |R|_nat=1.000, R^2=0.191
+window = 7 samples (~0.42 s):
+  unit-circle fit: k=-33.7, d=-0.384, g=-10.2, R^2=0.189, resid_std=2.58
+  force-on only:   k=-35.2, d=-0.247, g=-10.2, R^2=0.223
+  free radial:     |R|_nat=1.002, R^2=0.190
+window = 11 samples (~0.66 s):
+  unit-circle fit: k=-10.8, d=-0.249, g=-5.13, R^2=0.132, resid_std=1.76
+  force-on only:   k=-10.1, d=0.0998, g=-4.46, R^2=0.163
+  free radial:     |R|_nat=1.011, R^2=0.136
+window = 15 samples (~0.90 s):
+  unit-circle fit: k=-4.29, d=-0.211, g=-3.58, R^2=0.092, resid_std=1.34
+  force-on only:   k=-3.36, d=0.209, g=-2.87, R^2=0.123
+  free radial:     |R|_nat=1.032, R^2=0.101
+Best smoothing window by R^2: 5
+
+--- ODE integrated Delta-v checks (natural units) ---
+Integrated Delta-v (lag=3 samples, ~0.18 s, n=20388 increments):
+  k=-66.7, d=-0.1, g=-18.8, R^2=0.245
+Integrated Delta-v (lag=5 samples, ~0.30 s, n=17988 increments):
+  k=-57, d=0.412, g=-16.9, R^2=0.278
+Integrated Delta-v (lag=8 samples, ~0.48 s, n=14388 increments):
+  k=-39, d=0.928, g=-12.9, R^2=0.335
+Integrated Delta-v (lag=10 samples, ~0.60 s, n=11988 increments):
+  k=-29.7, d=1.02, g=-10.8, R^2=0.367
+Best integrated fit by R^2: lag=10
+
+--- ODE trajectory prediction (force-on windows) ---
+Using k,d,g from integrated fit (lag=10): k=-29.7, d=1.02, g=-10.8
+Force-on trajectories scored: 299
+Path RMSE (natural units): mean=2.485, median=0.760
+Final |Δr| (natural units): mean=36.034, median=1.664
+Final angle error |Δψ|: mean=147.8 deg, median=157.9 deg
+Final angle within +/- 20 deg: 0.7%
+
+--- One-step ODE check, full state (x,y,vx,vy) ---
+Force-off one-step pairs: 5697
+Force-off ODE fit (k, d only): k=3.89, d=2.84
+Tight sigmas (q and v) after force-off k,d fit:
+  sigma_x = 0.003085
+  sigma_y = 0.003797
+  sigma_vx = 0.05513
+  sigma_vy = 0.06821
+Logged position step (natural units): 0.01148
+Force-off chi^2_red (calibration): 1.000  (nu=22786)
+Force-off residual distributions (sigma samples):
+  dx: n=5697, mean=0.0004027, std=0.003058, skew=1.276, kurtosis=49.433 (Gauss=3, excess=46.433)
+  MAD=0.001541, sigma_MAD=0.002284, std/sigma_MAD=1.34
+  frac |z|>2,3,5: 0.027, 0.012, 0.006  (Gauss ~0.046, 0.0027, 6e-7)
+  dy: n=5697, mean=0.001271, std=0.003578, skew=4.109, kurtosis=76.808 (Gauss=3, excess=73.808)
+  MAD=0.001456, sigma_MAD=0.002159, std/sigma_MAD=1.66
+  frac |z|>2,3,5: 0.021, 0.011, 0.004  (Gauss ~0.046, 0.0027, 6e-7)
+  dvx: n=5697, mean=0.007482, std=0.05462, skew=1.009, kurtosis=42.936 (Gauss=3, excess=39.936)
+  MAD=0.02728, sigma_MAD=0.04044, std/sigma_MAD=1.35
+  frac |z|>2,3,5: 0.025, 0.013, 0.006  (Gauss ~0.046, 0.0027, 6e-7)
+  dvy: n=5697, mean=0.02331, std=0.06411, skew=3.800, kurtosis=64.550 (Gauss=3, excess=61.550)
+  MAD=0.02658, sigma_MAD=0.03941, std/sigma_MAD=1.63
+  frac |z|>2,3,5: 0.022, 0.011, 0.005  (Gauss ~0.046, 0.0027, 6e-7)
+One-step fit on force-on pairs (N_steps=5697):
+  k=-71.5, d=0.59, g=-17.4
+  chi^2 = 6.15e+05,  nu = 4*5697 - 3 = 22785
+  reduced chi^2 (full state) = 26.975
+  position-only chi^2 / 2N = 26.798
+  velocity-only chi^2 / 2N = 27.145
+  RMS residuals vs sigma:
+    x: rms=0.01706, sigma=0.003085, ratio=5.53
+    y: rms=0.01822, sigma=0.003797, ratio=4.80
+    vx: rms=0.3083, sigma=0.05513, ratio=5.59
+    vy: rms=0.3273, sigma=0.06821, ratio=4.80
+Force-on residual distributions:
+  dx: n=5697, mean=0.0005941, std=0.01705, skew=-0.100, kurtosis=9.755 (Gauss=3, excess=6.755)
+  MAD=0.003841, sigma_MAD=0.005695, std/sigma_MAD=2.99
+  frac |z|>2,3,5: 0.068, 0.030, 0.002  (Gauss ~0.046, 0.0027, 6e-7)
+  dy: n=5697, mean=0.0001882, std=0.01822, skew=-0.173, kurtosis=9.302 (Gauss=3, excess=6.302)
+  MAD=0.004002, sigma_MAD=0.005933, std/sigma_MAD=3.07
+  frac |z|>2,3,5: 0.075, 0.026, 0.001  (Gauss ~0.046, 0.0027, 6e-7)
+  dvx: n=5697, mean=0.009282, std=0.3081, skew=-0.244, kurtosis=10.982 (Gauss=3, excess=7.982)
+  MAD=0.06792, sigma_MAD=0.1007, std/sigma_MAD=3.06
+  frac |z|>2,3,5: 0.065, 0.029, 0.003  (Gauss ~0.046, 0.0027, 6e-7)
+  dvy: n=5697, mean=0.001901, std=0.3273, skew=-0.275, kurtosis=10.212 (Gauss=3, excess=7.212)
+  MAD=0.07022, sigma_MAD=0.1041, std/sigma_MAD=3.14
+  frac |z|>2,3,5: 0.071, 0.026, 0.003  (Gauss ~0.046, 0.0027, 6e-7)
+Per-step chi^2: mean=107.89, median=8.51, p95=597.23, max=2606.89
+Fraction of total chi^2 from top 5% steps: 0.49
+RMS |Delta q| per step: off=0.01224, on=0.0827, ratio=6.76
+RMS |Delta v| per step: off=0.0956, on=0.4984, ratio=5.21
+Fraction of coasting one-step variance explained by ODE (all channels): 0.186
+Chi^2_red after dropping worst 5% steps: 14.441 (nu=21645)
+
+--- Force library identification ---
+
+Force-on library fit: N_eq=11394 (5697 steps x 2)
+  dense library R^2=0.289, residual RMS=5.356
+  Top |coeff| terms (dense):
+    theta*c           +63.24
+    x                 -55.41
+    x*r^2             +45.14
+    theta*x           -41.87
+    theta*u*c         -24.58
+    theta*s           +23.15
+    u*x               +15.69
+    theta*y           -12.83
+    u*c               -9.633
+    theta*u*s         -8.804
+    y*r^2             -5.539
+    u*y               +4.002
+  Designed ODE subspace ['x', 'x*r^2', 'vx', 'theta*c']: R^2=0.187
+    x                 -61.46
+    x*r^2             +58.73
+    vx                -0.5679
+    theta*c           -2.367
+    implied k from 'x': -61.46, from '-coeff(x*r^2)': -58.73
+    implied d = -coeff(vx): +0.5679
+    implied g = coeff(theta*c): -2.367
+  SINDy-sparse R^2=0.241, 8 active terms:
+    x                 -73.53
+    x*r^2             +67.93
+    theta*c           +38.63
+    theta*x           -30.7
+    theta*u*c         -20.93
+    u*x               +11.01
+    u*c               -10.77
+    c                 +4.38
+
+Force-off library fit: N_eq=11394 (5697 steps x 2)
+  dense library R^2=0.166, residual RMS=1.102
+  Top |coeff| terms (dense):
+    y*r^2             -15.09
+    y                 +14.93
+    x*r^2             -5.949
+    x                 +5.872
+    vx                -2.756
+    theta             +0.7689
+    vy                -0.6315
+    theta*y           -0.4593
+    theta*x           +0.4021
+  Designed ODE subspace ['x', 'x*r^2', 'vx', 'theta*c']: R^2=0.125
+    x                 +5.663
+    x*r^2             -5.742
+    vx                -2.66
+    implied k from 'x': +5.663, from '-coeff(x*r^2)': +5.742
+    implied d = -coeff(vx): +2.66
+  SINDy-sparse R^2=0.153, 5 active terms:
+    y*r^2             -16.71
+    y                 +16.5
+    x*r^2             -4.97
+    x                 +4.899
+    vx                -2.889
+
+--- Hypothesis: force ~ (1 + u - phi) * n ---
+Force-on nested models a = k q(1-r^2) - d v + g f n:
+  f = theta_logged:
+  k=-75.13, d=0.09935, g=-17.9,  R^2=0.165, RMS=5.801
+  f = 1 + u - phi_logged:
+  k=-57.68, d=0.5587, g=-1.689,  R^2=0.128, RMS=5.931
+  f = u - phi_logged:
+  k=-68.61, d=0.162, g=-5.068,  R^2=0.170, RMS=5.787
+  f = 1 + u  (ignore phi):
+  k=-54.67, d=0.6252, g=-1.385,  R^2=0.120, RMS=5.955
+  f = b0 + b1 u + b2 phi  (free), via g*f*n expanded:
+    k=-67.6, d=0.1573, g*b0=0.6333, g*b1=-5.399, g*b2=3.862,  R^2=0.170
+    implied (b0, b1, b2) ~ (1, -8.524, 6.098) if normalized to b0=1;  hypothesis (1,+1,-1)
+
+Logged phi range: [0.01, 0.36]
+  f=1+u-phi with phi as logged:
+  k=-57.68, d=0.5587, g=-1.689,  R^2=0.128, RMS=5.931
+  f=1+u-phi with phi * (2/phiMax):
+  k=-70.34, d=0.1047, g=-3.1,  R^2=0.154, RMS=5.84
+  f=1+u-phi with phi * 5 (volts):
+  k=-70.7, d=0.136, g=-3.105,  R^2=0.156, RMS=5.834
+  f=1+u-phi with phi * (2/0.36):
+  k=-70.34, d=0.1047, g=-3.1,  R^2=0.154, RMS=5.84
+
+theta_logged vs 1+u-phi_logged: corr=0.915, RMSE=1.350
+  mean theta_logged=0.118, mean(1+u-phi)=1.383
+  best affine theta ≈ a + b(1+u-phi): a=-0.256, b=0.270, R^2=0.838
+
+--- First-order tangential model (drift + measurement force) ---
+Pairs: force-on 5382, force-off 5400
+Joint fit: g = 37.6 /s (schematic predicts 50 /s -> tau_eff = 13.31 ms)
+  drift F0 = (+0.0536, +0.1573) /s  -> |F0| = 0.1662 /s, attractor at 71.2 deg
+  equivalent velocity-node offset (tau = 10 ms): (+2.68, +7.86) mV
+  R^2 force-on  = 0.951
+  R^2 force-off = 0.596
+Force-on only:  g = 37.4, F0 = (+0.0275, +0.1184), R^2 = 0.952
+Force-off only: g*C_OFF term g = 43.3, F0 = (+0.0774, +0.1925), R^2 = 0.623
+Force-on steps still collapsing: 1248
+  |measurement term| median 2.244 /s, |drift term| median 0.105 /s; drift > measurement in 2.0% of them
+  (median |theta| where drift wins: 0.003, elsewhere: 0.109)
+First-order trajectory prediction (299 force-on windows):
+  final angle error: median |.| = 0.5 deg, within +/- 20 deg: 100.0%
