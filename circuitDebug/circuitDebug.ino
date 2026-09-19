@@ -8,6 +8,9 @@ set x, y, c, s, and phi from the Serial Monitor.
 
 Values are fractions of 5 V (same convention as modelQubit.ino):
   -1 → -5 V,  0 → 0 V,  +1 → +5 V
+For c and s that is the full ±5 V range. Phi has its own drive circuit
+(2:1 divider into a unity-gain Sallen-Key filter), so phi covers 0 .. +0.5
+only (0 .. 2.5 V) in steps of 9.8 mV; values outside that range are clipped.
 
 Commands (one per line; case-insensitive names):
   help              Print this help
@@ -16,7 +19,7 @@ Commands (one per line; case-insensitive names):
   c <val>           Set c and drive the c pin
   s <val>           Set s and drive the s pin
   cs <c> <s>        Set both c and s
-  phi <val>         Set phi and drive the phi pin
+  phi <val>         Set phi and drive the phi pin (0 .. 0.5, i.e. 0 .. 2.5 V)
   x <val>           Collapse toward (val, last y); see note below
   y <val>           Collapse toward (last x, val)
   xy <x> <y>        Collapse toward (x, y)
@@ -37,8 +40,15 @@ const int xPin = A2;
 const int yPin = A3;
 
 const int dt = 50; // ms between streamed readings
+// A streamed line is ~73 chars: 76 ms at 9600 baud (longer than dt), 6.3 ms at 115200.
+// Must match modelQubit.ino and the Serial Monitor setting.
+const long baudRate = 115200;
 const float V_RAIL = 5.0;
-const float V_CLIP = 0.05;
+
+// Phi drive (must match modelQubit.ino): V_phi = PHI_GAIN * duty * V_PWM_HIGH
+const float PHI_GAIN = 0.5;       // Divider gain ahead of the Sallen-Key filter
+const float V_PWM_HIGH = 5.0;     // Measured PWM high level (V)
+const int PHI_SETTLE_MS = 250;    // Filter settles to <0.1 LSB in ~90 ms; 250 ms is margin
 
 float c = 0;
 float s = 0;
@@ -62,9 +72,16 @@ int normToPwm(float v) {
   return int(255.0 * ((v + 1.0) / 2.0));
 }
 
+// Phi has its own drive circuit: V_phi = PHI_GAIN * (code/255) * V_PWM_HIGH.
+// Stores the quantized value actually delivered, and waits for the filter.
 void setPhi(float phiIn) {
-  phi = phiIn;
-  analogWrite(phiPin, normToPwm(phi));
+  float vWanted = phiIn * V_RAIL;
+  int code = int(round(255.0 * vWanted / (PHI_GAIN * V_PWM_HIGH)));
+  if (code < 0) code = 0;
+  if (code > 255) code = 255;
+  analogWrite(phiPin, code);
+  phi = (code / 255.0) * PHI_GAIN * V_PWM_HIGH / V_RAIL;
+  delay(PHI_SETTLE_MS);
 }
 
 void measureOn() {
@@ -85,7 +102,7 @@ void setXY(float xIn, float yIn) {
   yCmd = yIn;
 
   float phiPrev = phi;
-  setPhi(-V_CLIP / V_RAIL);
+  setPhi(0.0); // 0 V keeps theta > 0 for every (x, y); phi can no longer go negative
 
   c = xIn;
   s = yIn;
@@ -104,7 +121,8 @@ void readState() {
   float thetaRaw = analogRead(thetPin) / 1023.0;
   float xRaw = analogRead(xPin) / 1023.0;
   float yRaw = analogRead(yPin) / 1023.0;
-  theta = 2.0 * thetaRaw - 1.0;
+  //theta interface: V_pin = 2V + 0.8*V_theta  ->  V_theta/5V = (thetaRaw - 0.4) / 0.8
+  theta = 1.25 * thetaRaw - 0.5;
   x = 2.0 * xRaw - 1.0;
   y = 2.0 * yRaw - 1.0;
 }
@@ -112,7 +130,7 @@ void readState() {
 void tellState() {
   float state[8] = {t, c, s, on, theta, phi, x, y};
   for (int i = 0; i < 8; i++) {
-    Serial.print(state[i]);
+    Serial.print(state[i], 4); // 4 decimals: one phi step is 0.00196 of 5 V
     Serial.print(", ");
   }
   Serial.println();
@@ -122,7 +140,7 @@ void printHelp() {
   Serial.println(F("circuitDebug — voltages as fractions of 5V"));
   Serial.println(F("t (s), c, s, on/off, theta, phi, x, y"));
   Serial.println(F("Commands: help, status, stream on|off,"));
-  Serial.println(F("  c <v>, s <v>, cs <c> <s>, phi <v>,"));
+  Serial.println(F("  c <v>, s <v>, cs <c> <s>, phi <v>  (phi: 0..0.5),"));
   Serial.println(F("  x <v>, y <v>, xy <x> <y>, on, off"));
 }
 
@@ -241,9 +259,16 @@ void handleCommand(String cmdLine) {
       Serial.println(F("usage: phi <val>"));
       return;
     }
+    if (v < 0.0 || v > PHI_GAIN) {
+      Serial.print(F("phi clipped to 0.."));
+      Serial.println(PHI_GAIN, 4);
+    }
     setPhi(v);
     Serial.print(F("phi="));
-    Serial.println(phi);
+    Serial.print(phi, 4);
+    Serial.print(F(" ("));
+    Serial.print(phi * V_RAIL, 4);
+    Serial.println(F(" V)"));
     return;
   }
 
@@ -319,7 +344,7 @@ void setup() {
   pinMode(xPin, INPUT);
   pinMode(yPin, INPUT);
 
-  Serial.begin(9600);
+  Serial.begin(baudRate);
   measureOff();
   setPhi(0.0);
 

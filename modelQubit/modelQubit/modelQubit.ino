@@ -36,10 +36,16 @@ const int m = 10; //Number of angles to measure probabilities on.
 //   i.e. phi in [0.03013, 0.39540] of 5 V.
 // The THETA CALIBRATION section of mqDataAnalysis.py cross-checks these against
 // the measured theta transfer. (PWM resolution is ~39 mV per step.)
-const float V_RAIL = 5.0;      // Full-scale op-amp voltage at the PWM extremes
+const float V_RAIL = 5.0;      // Full-scale op-amp voltage at the PWM extremes (c/s drive)
 const float R_EQ = sqrt(14.0 / 19.0);  // Equilibrium radius set by the 1-r^2 circuit
 const float THETA_GAIN = 10.0 / 47.0;  // (50/47 V) / V_RAIL: theta-circuit scale in units of 5 V
-const float V_CLIP = 0.05;     // Used by setXY to park phi slightly below 0 V
+
+// Phi drive: 2:1 divider into a unity-gain Sallen-Key low pass (22k, 220nF/470nF).
+// V_phi = PHI_GAIN * duty * V_PWM_HIGH, so 0 V .. 2.5 V, one PWM step = 9.8 mV.
+// Measure the pin's high level and update V_PWM_HIGH; it is the board's 5 V rail.
+const float PHI_GAIN = 0.5;       // Divider gain ahead of the filter
+const float V_PWM_HIGH = 5.0;     // Measured PWM high level (V)
+const int PHI_SETTLE_MS = 250;    // Filter settles to <0.1 LSB in ~90 ms; 250 ms is margin
 // Stored/commanded phi is in units of V_RAIL (same as c/s), so 0 V → 0, 5 V → 1
 const float phiMin = THETA_GAIN * (1.0 - R_EQ);  // 0.03013 (0.151 V)
 const float phiMax = THETA_GAIN * (1.0 + R_EQ);  // 0.39540 (1.977 V)
@@ -82,11 +88,18 @@ void setAxis_rel(float angle) {
   s = (yn * cPrime) + (xn * sPrime);
 }
 
-// Set phi (normalized to ±V_RAIL, same scaling as c/s: -1 → -5 V, +1 → +5 V)
+// Set phi, stored in units of V_RAIL like c and s, but phi now has its own
+// drive circuit: V_phi = PHI_GAIN * (code / 255) * V_PWM_HIGH, so phi >= 0 only.
+// The stored value is the quantized one actually delivered, so the log records
+// what the circuit did rather than what was requested.
 void setPhi(float phiIn) {
-  phi = phiIn;
-  int phiOut = int(255.0 * ((phi + 1.0) / 2.0));
-  analogWrite(phiPin, phiOut);
+  float vWanted = phiIn * V_RAIL;
+  int code = int(round(255.0 * vWanted / (PHI_GAIN * V_PWM_HIGH)));
+  if (code < 0) code = 0;
+  if (code > 255) code = 255;
+  analogWrite(phiPin, code);
+  phi = (code / 255.0) * PHI_GAIN * V_PWM_HIGH / V_RAIL;
+  delay(PHI_SETTLE_MS); // Let the Sallen-Key filter settle before anything is recorded
 }
 
 // Switch measurement on/off
@@ -109,10 +122,11 @@ void measureOff() {
 }
 
 // Set (x, y) indirectly by measuring along (xIn, yIn), waiting to equilibrate, then releasing.
-// Phi is parked slightly negative during the collapse so the state can settle, then restored.
+// Phi is parked at 0 V during the collapse, which keeps theta > 0 for every (x, y),
+// so the state settles on +(c, s). (The new phi circuit cannot go negative.)
 void setXY(float xIn, float yIn) {
   float phiPrev = phi;
-  setPhi(-V_CLIP / V_RAIL); // slightly below 0 V
+  setPhi(0.0);
 
   c = xIn;
   s = yIn;
@@ -216,7 +230,8 @@ void setup() {
 
   // Print metadata ("fw vN" tells mqDataAnalysis.py which corrections apply)
   // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, circuit-derived phi sweep
-  Serial.println("Voltages are recorded as fractions of 5V (fw v3: theta = V_theta/5V, settled reads, unit axis, circuit-derived phi sweep)");
+  // v4: dedicated phi drive (gain 0.5 + Sallen-Key), phi logged as the quantized value delivered
+  Serial.println("Voltages are recorded as fractions of 5V (fw v4: theta = V_theta/5V, settled reads, unit axis, phi gain 0.5)");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }
