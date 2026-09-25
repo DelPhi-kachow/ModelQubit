@@ -23,7 +23,8 @@ const int dt = 50; //The number of milliseconds between consecutive readings
 const int settleMs = 50; //Wait after switching c/s. Sallen-Key c/s filter: tau = 2 ms, within 1 ADC LSB by ~15 ms
 const int printDigits = 4; //Decimal places in serial output (Serial.print default is 2 -> 0.01 steps)
 const long baudRate = 115200; //At 9600 baud one ~60-char line takes ~60 ms to send; set the logger to match
-const int N = 10; //Number of phi samples (and trials per angle). Sets precision of measured probabilities.
+const int N = 30; //Number of phi samples (and trials per angle). Sets precision of measured probabilities.
+                  //Error bars ~0.016 at N = 30 (see mqAnalysis.py); PWM gives ~186 phi levels, so keep N <= ~50.
 const int m = 10; //Number of angles to measure probabilities on.
 
 // Phi sweep: PWM 0 → -5 V, PWM 255 → +5 V.
@@ -195,6 +196,21 @@ void measure() {
   tellState();
 }
 
+// Phi visiting order: a shuffled permutation of 0..N-1, so slow drift over the run
+// (e.g. AD633 offsets warming up) does not line up with phi
+int phiOrder[N];
+unsigned long shuffleSeed = 0;
+
+void shufflePhiOrder() {
+  for (int i = 0; i < N; i++) phiOrder[i] = i;
+  for (int i = N - 1; i > 0; i--) {  // Fisher-Yates
+    int j = random(i + 1);
+    int tmp = phiOrder[i];
+    phiOrder[i] = phiOrder[j];
+    phiOrder[j] = tmp;
+  }
+}
+
 // Take a suite of measurements at regular intervals
 void measurements(int N) {
   for (int i = 0; i < N; i++) {
@@ -227,9 +243,18 @@ void angleSuite() {
 }
 
 // Perform the full suite: N phi samples × m relative angles
+// Midpoint grid: phi_i sits at the center of the i-th of N equal cells spanning
+// [phiMin, phiMax], so the fraction of phi values below any threshold is an unbiased
+// estimate of the Born probability (an endpoint grid biases it toward 1/2).
 void fullSuite(){
-  for (int i = 0; i < N; i++) {
-    float phiVal = phiMin + i * (phiMax - phiMin) / (N - 1.0);
+  // Record a force-off window first, so the first trial's axis is set relative to a
+  // measured state (setAxis_rel needs x, y) and the log has a pre-trial sample
+  measureOff();
+  delay(settleMs);
+  measurements(20);
+  for (int k = 0; k < N; k++) {
+    int i = phiOrder[k];
+    float phiVal = phiMin + (i + 0.5) * (phiMax - phiMin) / N;
     setPhi(phiVal);
     angleSuite();
   }
@@ -244,16 +269,33 @@ void setup() {
   // Begin serial
   Serial.begin(baudRate);
 
-  // Print metadata ("fw vN" tells mqDataAnalysis.py which corrections apply)
+  // Seed the phi shuffle from a floating analog pin (A0 is unconnected)
+  shuffleSeed = analogRead(A0) ^ (micros() << 4);
+  randomSeed(shuffleSeed);
+  shufflePhiOrder();
+
+  // Print metadata ("fw vN" tells mqAnalysis.py which corrections apply)
   // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, circuit-derived phi sweep
   // v4: dedicated phi drive (gain 0.5 + Sallen-Key), phi logged as the quantized value delivered
   // v5: c/s moved to pins 9/10, 31 kHz Timer1 PWM into Sallen-Key filters
-  Serial.println("Voltages are recorded as fractions of 5V (fw v5: theta = V_theta/5V, settled reads, unit axis, phi gain 0.5, c/s 31 kHz Sallen-Key)");
+  // v6: N = 30 midpoint phi grid in shuffled order, one suite then stop, leading force-off window
+  Serial.print("Voltages are recorded as fractions of 5V (fw v6: theta = V_theta/5V, settled reads, unit axis, phi gain 0.5, c/s 31 kHz Sallen-Key, ");
+  Serial.print(N);
+  Serial.print("-point midpoint phi grid, shuffle seed ");
+  Serial.print(shuffleSeed);
+  Serial.println(")");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }
 
 // Runs continuously after setup
 void loop() {
+  // One suite, then park the circuit and stop. Repeat suites reuse the same phi
+  // values, so they add little; a denser grid is the better use of run time.
   fullSuite();
+  measureOff();
+  Serial.println("# suite complete");
+  while (true) {
+    delay(1000);
+  }
 }

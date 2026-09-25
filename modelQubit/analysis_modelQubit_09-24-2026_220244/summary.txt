@@ -1,0 +1,46 @@
+Log: modelQubit_09-24-2026_220244.log  (fw v6, 12020 samples, 300 trials, median dt = 54 ms)
+
+=== GOAL 1: does the circuit implement the ODE model? ===
+1a theta transfer  theta = a0 + b u + g phi   (fit +/- bootstrap, design, deviation)
+     a0 = +0.2116 +/- 0.0003   design +0.2128   -0.5%
+     b  = +0.2098 +/- 0.0002   design +0.2128   -1.4%
+     g  = -1.0019 +/- 0.0011   design -1.0000   +0.2%
+     R^2 = 0.9998, rms residual = 0.0032 (/5 V)
+1b radius  R_obs = 0.8655 (IQR 0.860-0.890)   design sqrt(14/19) = 0.8584   +0.8%
+1c dynamics  r dpsi/dt = g theta (n.t) + F0.t
+     g = 45.7 +/- 0.1 /s   design 50 /s   -8.6%   (R^2 force-on = 0.992)
+     drift F0 = (-0.0480 +/- 0.0049, +0.0876 +/- 0.0040) /s
+     forward prediction of final angle: median |err| = 0.6 deg (design g, no drift), 0.4 deg (fitted g, F0)
+1d sign rule  pole = sign(theta0)*(c,s): 299/300 = 99.7%
+     exceptions (trial: theta0): 183: -0.002
+1e end to end  outcome == ideal model(D, phi): 296/300 = 98.7%   (1 ambiguous)
+     threshold bias mu = +0.009 (68% CI +0.006 to +0.012),  jitter sigma_m = 0.006 (68% CI 0.001-0.007)   [probability units]
+     mismatches (trial: margin m): 36: +0.000, 108: +0.004, 183: +0.017, 275: +0.002
+
+=== GOAL 2: do the empirical probabilities obey the Born rule? ===
+phi grid: 30 distinct values, spacing h = 0.032 in w -> hidden-variable resolution <= 1/(2 N_phi) = 0.017
+ bin  D(deg)   n  amb   p_hat   Born   ideal  gridBias  sig_HV  sig_dev sig_amb  sigma   pull
+   0     0.0   30    0   1.000  1.000  1.000  -0.002   0.012   0.011   0.000   0.016  +0.00
+   1    10.0   30    0   1.000  0.992  1.000  -0.002   0.013   0.011   0.000   0.016  +0.46
+   2    20.0   30    0   0.967  0.970  0.967  -0.003   0.007   0.010   0.000   0.012  -0.27
+   3    30.0   30    1   0.917  0.933  0.933  +0.001   0.010   0.011   0.017   0.022  -0.73
+   4    40.0   30    0   0.867  0.883  0.867  -0.000   0.009   0.011   0.000   0.014  -1.15
+   5    50.0   30    0   0.800  0.821  0.833  -0.003   0.011   0.010   0.000   0.015  -1.41
+   6    60.0   30    0   0.733  0.750  0.767  +0.001   0.010   0.011   0.000   0.015  -1.14
+   7    70.0   30    0   0.667  0.671  0.667  -0.002   0.006   0.009   0.000   0.011  -0.40
+   8    80.0   30    0   0.567  0.587  0.600  +0.000   0.012   0.011   0.000   0.016  -1.27
+   9    90.0   30    0   0.500  0.500  0.500  +0.000   0.009   0.010   0.000   0.014  +0.00
+chi^2 = 7.19 for 10 dof (chi^2/nu = 0.72), p = 0.707
+RMS(p_hat - Born) = 0.013;  RMS(ideal model on this grid - Born) = 0.010
+ideal    = what a perfect circuit gives with exactly these phi values
+gridBias = expected p_hat - Born for a perfect circuit under this phi grid (nonzero for an endpoint-inclusive grid; zero for a midpoint grid)
+
+=== SUMMARY ===  (WARN: outside the typical-offset band; FAIL: outside the max band)
+  [PASS] 1a theta a0                 -0.5%   typ [-3.6%, +3.6%], max [-4.8%, +4.9%]
+  [PASS] 1a theta b                  -1.4%   typ [-1.8%, +1.8%], max [-1.8%, +1.8%]
+  [PASS] 1a theta gphi               +0.2%   typ [-2.1%, +2.1%], max [-2.1%, +2.2%]
+  [PASS] 1b equilibrium radius       +0.8%   typ [-1.0%, +1.0%], max [-2.4%, +2.4%]
+  [PASS] 1c measurement gain g       -8.6%   typ [-9.2%, +11.0%], max [-9.2%, +11.1%]
+  [PASS] 1e threshold bias mu       +0.009   typ [-0.011, +0.013], max [-0.024, +0.030]
+  [PASS] 2  Born rule chi^2       p = 0.707   need p >= 0.05
+  [info] 1d sign rule 99.7%, 1e ideal-model agreement 98.7% (outcome-level agreement is tested by the chi^2)
