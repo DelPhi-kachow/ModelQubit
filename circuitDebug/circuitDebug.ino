@@ -32,8 +32,8 @@ Note: x and y have no DAC. Setting them measures along that axis for 1 s
 
 
 // Pin numbers (match modelQubit.ino)
-const int cPin = 6;
-const int sPin = 5;
+const int cPin = 9;  // Timer1 PWM at 31 kHz (see setupCsPwm)
+const int sPin = 10;
 const int phiPin = 3;
 const int thetPin = A1;
 const int xPin = A2;
@@ -337,6 +337,20 @@ void pollSerial() {
   }
 }
 
+// c/s PWM on Timer1 (pins 9/10). Arduino's default Timer1 setup is 8-bit
+// phase-correct PWM with prescaler 64 (490 Hz). Dropping the prescaler to 1 gives
+// 16 MHz / (2 * 255) = 31.37 kHz, which the c/s Sallen-Key filter (f_-3dB ~ 113 Hz)
+// attenuates by ~98 dB. analogWrite() keeps working (same 0-255 duty scale), and
+// millis()/delay() are untouched (they run on Timer0). Pin 3 (phi) stays on Timer2
+// at 490 Hz, which is what the phi filter was designed for. Don't use the Servo
+// library: it also takes over Timer1.
+#if !defined(__AVR_ATmega328P__) && !defined(__AVR_ATmega168__)
+#error "c/s PWM setup assumes an ATmega328P (Uno/Nano), where pins 9/10 are Timer1"
+#endif
+void setupCsPwm() {
+  TCCR1B = (TCCR1B & 0b11111000) | 0b001; // CS12:0 = 001 -> clk/1
+}
+
 void setup() {
 
   // To avoid floating analog pins, it is imperative to set them up as inputs
@@ -344,6 +358,7 @@ void setup() {
   pinMode(xPin, INPUT);
   pinMode(yPin, INPUT);
 
+  setupCsPwm();
   Serial.begin(baudRate);
   measureOff();
   setPhi(0.0);

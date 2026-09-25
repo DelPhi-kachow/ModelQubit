@@ -11,8 +11,8 @@ which can be recorded to a csv file.
 
 
 // Set pin numbers
-const int cPin = 6;
-const int sPin = 5;
+const int cPin = 9;  // Timer1 PWM at 31 kHz (see setupCsPwm), Sallen-Key filtered
+const int sPin = 10; // Timer1 PWM at 31 kHz
 const int phiPin = 3; // PWM output (same drive circuit as c/s)
 const int thetPin = A1;
 const int xPin = A2;
@@ -20,7 +20,7 @@ const int yPin = A3;
 
 // Other parameters
 const int dt = 50; //The number of milliseconds between consecutive readings
-const int settleMs = 50; //Wait after switching c/s so the 100k*100nF (10 ms) PWM filter settles (~5 tau)
+const int settleMs = 50; //Wait after switching c/s. Sallen-Key c/s filter: tau = 2 ms, within 1 ADC LSB by ~15 ms
 const int printDigits = 4; //Decimal places in serial output (Serial.print default is 2 -> 0.01 steps)
 const long baudRate = 115200; //At 9600 baud one ~60-char line takes ~60 ms to send; set the logger to match
 const int N = 10; //Number of phi samples (and trials per angle). Sets precision of measured probabilities.
@@ -59,6 +59,20 @@ float x = 0;
 float y = 0;
 float t = 0;
 bool on = false;
+
+// c/s PWM on Timer1 (pins 9/10). Arduino's default Timer1 setup is 8-bit
+// phase-correct PWM with prescaler 64 (490 Hz). Dropping the prescaler to 1 gives
+// 16 MHz / (2 * 255) = 31.37 kHz, which the c/s Sallen-Key filter (f_-3dB ~ 113 Hz)
+// attenuates by ~98 dB. analogWrite() keeps working (same 0-255 duty scale), and
+// millis()/delay() are untouched (they run on Timer0). Pin 3 (phi) stays on Timer2
+// at 490 Hz, which is what the phi filter was designed for. Don't use the Servo
+// library: it also takes over Timer1.
+#if !defined(__AVR_ATmega328P__) && !defined(__AVR_ATmega168__)
+#error "c/s PWM setup assumes an ATmega328P (Uno/Nano), where pins 9/10 are Timer1"
+#endif
+void setupCsPwm() {
+  TCCR1B = (TCCR1B & 0b11111000) | 0b001; // CS12:0 = 001 -> clk/1
+}
 
 // Set measurement axis
 void setAxis_abs(float angle) {
@@ -224,6 +238,8 @@ void fullSuite(){
 // Runs once when device turned on
 void setup() {
   // Setup pins
+  setupCsPwm();
+  measureOff(); // Park c/s at 0 V instead of leaving the filters floating
 
   // Begin serial
   Serial.begin(baudRate);
@@ -231,7 +247,8 @@ void setup() {
   // Print metadata ("fw vN" tells mqDataAnalysis.py which corrections apply)
   // v2: theta = V_theta/5V, 4-decimal, settled reads; v3: unit-length axis, circuit-derived phi sweep
   // v4: dedicated phi drive (gain 0.5 + Sallen-Key), phi logged as the quantized value delivered
-  Serial.println("Voltages are recorded as fractions of 5V (fw v4: theta = V_theta/5V, settled reads, unit axis, phi gain 0.5)");
+  // v5: c/s moved to pins 9/10, 31 kHz Timer1 PWM into Sallen-Key filters
+  Serial.println("Voltages are recorded as fractions of 5V (fw v5: theta = V_theta/5V, settled reads, unit axis, phi gain 0.5, c/s 31 kHz Sallen-Key)");
   Serial.println("t (s), c, s, on/off, theta, phi, x, y");
 
 }
