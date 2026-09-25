@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 
 #Setup variables
-fname = '../modelQubit_09-19-2026_155356.log'
+fname = '../modelQubit_09-24-2026_200144.log'
 
 '''
 TAKE IN THE DATA
@@ -133,10 +133,13 @@ def normPair(cIn, sIn):
     return(ci, si)
 
 #For each measurement, what was the relative angle between (x, y) and (c, s)?
-def rangle(index):
+def rangle(index, stateIndex = None):
+    #Axis (c, s) comes from index; state (x, y) from stateIndex (default: same)
+    if stateIndex is None:
+        stateIndex = index
     #Ensure normalization
     ci, si = normPair(c[index], s[index])
-    xi, yi = normPair(x[index], y[index])
+    xi, yi = normPair(x[stateIndex], y[stateIndex])
     
     #Find relative sine and cosine
     sr = yi * ci - xi * si
@@ -146,7 +149,14 @@ def rangle(index):
     angle = np.arctan2(sr, cr)
     return(angle)
 
-rangles = np.array([-rangle(dex[0]) for dex in mIndices])
+#Relative angle between the axis and the state *before* force-on.
+#firmware setAxis_rel() uses the last force-off sample (dex[0]-1); by the first
+#force-on sample the state has already moved ~settleMs under the force, toward
+#or away from (c, s) depending on the outcome, which biases the angle binning.
+#Fall back to dex[0] if there is no preceding force-off sample (first cycle).
+def preIndex(start):
+    return start - 1 if (start > 0 and not of[start - 1]) else start
+rangles = np.array([-rangle(dex[0], preIndex(dex[0])) for dex in mIndices])
 
 #Did we measure up or down on this axis?
 def updown(index, bound = 0.5):
