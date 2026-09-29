@@ -91,6 +91,14 @@ OVERVIEW = True         # overview animation of all trials at once
 OVERWRITE = False       # re-render animations that already exist
 TRIALCYCLE = (3, 5)     # first/last trial shown in trialCycle.pdf
 N_BOOT = 400            # bootstrap resamples (by trial) for parameter errors
+# Paper figures are drawn at their printed size so fonts come out at ~8 pt.
+# revtex reprint: column width 3.4 in; odeChecks is included at 0.8 \textwidth = 5.6 in.
+COL_W = 3.4
+ODE_W = 5.6
+FIG_RC = {'font.size': 8, 'axes.titlesize': 8, 'axes.labelsize': 8,
+          'legend.fontsize': 7, 'xtick.labelsize': 7, 'ytick.labelsize': 7,
+          'axes.linewidth': 0.6, 'lines.linewidth': 1.0,
+          'savefig.bbox': 'tight', 'savefig.pad_inches': 0.02}
 SEED = 0
 
 # Circuit design (must match modelQubit.ino and the paper's circuit analysis)
@@ -426,11 +434,20 @@ def born_bins(T, probit):
 # =============================================================================
 # FIGURES
 # =============================================================================
+def paper_style(fn):
+    """Draw a paper figure under FIG_RC (animations keep matplotlib defaults)."""
+    def wrapped(*args, **kw):
+        with plt.rc_context(FIG_RC):
+            return fn(*args, **kw)
+    return wrapped
+
+
+@paper_style
 def fig_trial_cycle(d, trials, path):
     a, b = trials[TRIALCYCLE[0]]['start'], trials[TRIALCYCLE[1]]['end']
     sl = slice(a, b + 1)
     t, on = d['t'][sl], d['on'][sl]
-    fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6.4, 4.8))
+    fig, ax = plt.subplots(2, 1, sharex=True, figsize=(COL_W, 2.9))
     ax[0].plot(t, d['c'][sl] * on, label='c')
     ax[0].plot(t, d['s'][sl] * on, label='s')
     ax[0].plot(t, d['ph'][sl], label=r'$\phi$')
@@ -440,7 +457,8 @@ def fig_trial_cycle(d, trials, path):
     for axx in ax:
         axx.fill_between(t, 0, 1, where=on, color='0.9', transform=axx.get_xaxis_transform(),
                          zorder=0, lw=0)
-        axx.legend(loc='upper right', fontsize=8)
+        axx.legend(loc='upper left', bbox_to_anchor=(1.01, 1.0), handlelength=1.5,
+                   borderaxespad=0.0, frameon=False)
     ax[0].set_ylabel('Control signals')
     ax[1].set_ylabel('Measurements')
     ax[1].set_xlabel('t (s)')
@@ -449,22 +467,23 @@ def fig_trial_cycle(d, trials, path):
     plt.close(fig)
 
 
+@paper_style
 def fig_empirical(B, chi2, dof, pval, path):
-    fig, (ax, axr) = plt.subplots(2, 1, sharex=True, figsize=(6.4, 5.4),
+    fig, (ax, axr) = plt.subplots(2, 1, sharex=True, figsize=(COL_W, 3.3),
                                   gridspec_kw={'height_ratios': [3, 1]})
     Dg = np.linspace(0, ANGLE_MAX, 400)
     ax.plot(Dg, np.cos(0.5 * Dg) ** 2, color='tab:blue', label='Born rule', zorder=1)
-    ax.plot(B['D'], B['E'], 's', mfc='none', mec='0.45', ms=8,
+    ax.plot(B['D'], B['E'], 's', mfc='none', mec='0.45', ms=5,
             label=r'ideal model, same $\phi$ values', zorder=2)
     ax.errorbar(B['D'], B['p'], yerr=B['sig'], fmt='.', color='red', ecolor='k',
-                ms=14, capsize=4, label='empirical', zorder=3)
+                ms=7, capsize=2, elinewidth=0.8, label='empirical', zorder=3)
     ax.set_ylabel('Up probability')
-    ax.legend(fontsize=8, loc='lower left')
-    ax.set_title(rf'$\chi^2/\nu = {chi2:.1f}/{dof}$,  $p = {pval:.2f}$', fontsize=10)
+    ax.legend(loc='lower left')
+    ax.set_title(rf'$\chi^2/\nu = {chi2:.1f}/{dof}$,  $p = {pval:.2f}$')
     pull = (B['p'] - B['P']) / B['sig']
     axr.axhspan(-1, 1, color='0.9', lw=0)
     axr.axhline(0, color='k', lw=0.8)
-    axr.plot(B['D'], pull, 'o', color='red', ms=5)
+    axr.plot(B['D'], pull, 'o', color='red', ms=3.5)
     axr.set_ylim(-3.5, 3.5)
     axr.set_ylabel(r'pull ($\sigma$)')
     axr.set_xlabel('Relative angle (rad)')
@@ -473,57 +492,58 @@ def fig_empirical(B, chi2, dof, pval, path):
     plt.close(fig)
 
 
+@paper_style
 def fig_ode(TH, TG, T, probit, errDesign, path):
-    fig, axs = plt.subplots(2, 2, figsize=(9, 8))
+    fig, axs = plt.subplots(2, 2, figsize=(ODE_W, 4.8))
     # (a) theta transfer
     ax = axs[0, 0]
-    ax.plot(TH['thetaDesign'], TH['thetaMeas'], '.', ms=2, alpha=0.3)
+    ax.plot(TH['thetaDesign'], TH['thetaMeas'], '.', ms=1.5, alpha=0.3)
     lim = [min(TH['thetaDesign'].min(), TH['thetaMeas'].min()),
            max(TH['thetaDesign'].max(), TH['thetaMeas'].max())]
     ax.plot(lim, lim, 'k--', lw=1)
     ax.set_xlabel(r'designed $\theta = G(1+u) - \phi$  (/5 V)')
     ax.set_ylabel(r'logged $\theta$  (/5 V)')
-    ax.set_title(f'(a) theta transfer, rms = {TH["rms"]:.4f}', fontsize=10)
+    ax.set_title(rf'(a) $\theta$ transfer, rms = {TH["rms"]:.4f}')
     # (b) tangential dynamics
     ax = axs[0, 1]
     pred = TG['A'] @ np.r_[TG['g'], TG['F0']]
-    ax.plot(pred, TG['b'], '.', ms=2, alpha=0.3)
+    ax.plot(pred, TG['b'], '.', ms=1.5, alpha=0.3)
     lim = np.percentile(np.abs(TG['b']), 99.5)
     ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1)
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
     ax.set_xlabel(r'model $g\,\theta\,(\hat n\cdot\hat t) + F_0\cdot\hat t$  (/s)')
     ax.set_ylabel(r'measured $r\,\dot\psi$  (/s)')
-    ax.set_title(rf'(b) first-order law, g = {TG["g"]:.1f} $\pm$ {TG["gErr"]:.1f} /s, '
-                 rf'$R^2$ = {TG["r2on"]:.3f}', fontsize=10)
+    ax.set_title(rf'(b) first-order law' '\n'
+                 rf'$g$ = {TG["g"]:.1f} $\pm$ {TG["gErr"]:.1f} /s, $R^2$ = {TG["r2on"]:.3f}')
     # (c) outcome vs margin with threshold fit
     ax = axs[1, 0]
     col = np.where(T['model_ok'], 'tab:green', 'tab:red')
     jit = np.random.default_rng(1).uniform(-0.03, 0.03, len(T['margin']))
-    ax.scatter(T['margin'], T['outcome'] + jit, c=col, s=10)
+    ax.scatter(T['margin'], T['outcome'] + jit, c=col, s=4)
     mg = np.linspace(T['margin'].min(), T['margin'].max(), 400)
     ax.plot(mg, normcdf((mg - probit['mu']) / probit['sigma']), 'k-', lw=1)
     ax.axvline(0, color='0.5', lw=0.8, ls=':')
     ins = ax.inset_axes([0.55, 0.12, 0.4, 0.45])
     zoom = np.abs(T['margin']) < 0.06
-    ins.scatter(T['margin'][zoom], T['outcome'][zoom] + jit[zoom], c=col[zoom], s=10)
+    ins.scatter(T['margin'][zoom], T['outcome'][zoom] + jit[zoom], c=col[zoom], s=4)
     mz = np.linspace(-0.06, 0.06, 200)
     ins.plot(mz, normcdf((mz - probit['mu']) / probit['sigma']), 'k-', lw=1)
     ins.axvline(0, color='0.5', lw=0.8, ls=':')
     ins.set_xlim(-0.06, 0.06)
-    ins.tick_params(labelsize=7)
-    ax.set_xlabel(r'margin $m = \cos^2(D/2) - w$  (ideal model: up iff $m>0$)')
+    ins.tick_params(labelsize=6)
+    ax.set_xlabel(r'margin $m = \cos^2(D/2) - w$')
     ax.set_ylabel('outcome (1 = up)')
-    ax.set_title(rf'(c) threshold: $\mu$ = {probit["mu"]:+.3f}, '
-                 rf'$\sigma_m$ = {probit["sigma"]:.3f}', fontsize=10)
+    ax.set_title(rf'(c) threshold' '\n'
+                 rf'$\mu$ = {probit["mu"]:+.3f}, $\sigma_m$ = {probit["sigma"]:.3f}')
     # (d) forward prediction with design g
     ax = axs[1, 1]
     lim = max(2.0, float(np.ceil(np.percentile(np.abs(errDesign), 99))))
     ax.hist(np.clip(errDesign, -lim, lim), bins=np.linspace(-lim, lim, 41),
             color='tab:blue', alpha=0.8)
-    ax.set_xlabel(r'final angle, predicted $-$ measured (deg)')
+    ax.set_xlabel('final-angle error (deg)')
     ax.set_ylabel('trials')
-    ax.set_title(rf'(d) forward prediction, design g: median |err| = '
-                 rf'{np.median(np.abs(errDesign)):.1f}$^\circ$', fontsize=10)
+    ax.set_title(rf'(d) forward prediction, design $g$' '\n'
+                 rf'median |err| = {np.median(np.abs(errDesign)):.1f}$^\circ$')
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

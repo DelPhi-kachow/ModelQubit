@@ -39,11 +39,12 @@ def axis_at(i):
 prevAxis = axis_at(trials[K - 1]['onStart']) if K > 0 else None
 newAxis = axis_at(tr['onStart'])
 iPre, iOn, iEnd = tr['pre'], tr['onStart'], tr['onEnd']
-frames = [(iPre, prevAxis, False, '(a) Initial state'),
-          (min(iOn + N_MID, iEnd), newAxis, True, '(b) New axis, force on'),
-          (iEnd, newAxis, True, '(c) Final state')]
+frames = [(iPre, prevAxis, False, '(a) Initial'),
+          (min(iOn + N_MID, iEnd), newAxis, True, '(b) Force on'),
+          (iEnd, newAxis, True, '(c) Final')]
 
-fig, axs = plt.subplots(1, 3, figsize=(3.5, 1.45))
+plt.rcParams.update(M.FIG_RC)   # same ~8 pt text as the other paper figures
+fig, axs = plt.subplots(1, 3, figsize=(M.COL_W, 1.45))
 for ax, (i, axisAng, dashedToo, title) in zip(axs, frames):
     ax.set_aspect('equal')
     ax.add_patch(Circle((0, 0), 1, fill=False, ec='0.6'))
@@ -52,8 +53,8 @@ for ax, (i, axisAng, dashedToo, title) in zip(axs, frames):
         ax.plot([0, ca], [0, sa], color='tab:orange', lw=1.3)
         ax.plot([0, -ca], [0, -sa], color='tab:orange', lw=1.3, ls='--')
         ax.plot(ca, sa, 'o', color='tab:orange', mfc='white', ms=5)
-        ax.text(1.3 * ca, 1.3 * sa, r'$\uparrow$', ha='center', va='center', fontsize=9)
-        ax.text(-1.3 * ca, -1.3 * sa, r'$\downarrow$', ha='center', va='center', fontsize=9)
+        ax.text(1.3 * ca, 1.3 * sa, r'$\uparrow$', ha='center', va='center', fontsize=10)
+        ax.text(-1.3 * ca, -1.3 * sa, r'$\downarrow$', ha='center', va='center', fontsize=10)
     lo = max(0, i - TRAIL)
     ax.plot(d['x'][lo:i + 1] / R, d['y'][lo:i + 1] / R, '-', color='tab:blue',
             alpha=0.35, lw=1.3)
@@ -62,9 +63,9 @@ for ax, (i, axisAng, dashedToo, title) in zip(axs, frames):
     ax.set_xticks([]); ax.set_yticks([])
     for sp in ax.spines.values():
         sp.set_visible(False)
-    ax.set_title(title, fontsize=7)
+    ax.set_title(title)
 fig.tight_layout(pad=0.3, w_pad=0.2)
-fig.savefig(OUT)
+fig.savefig(OUT, bbox_inches=None)
 print(f'trial {K}: D = {T["D_deg"][K]:.1f} deg, P_Born = {T["P_born"][K]:.3f}, '
       f'w = {T["w"][K]:.3f}, outcome = {T["outcome"][K]}, t(on) = {d["t"][iOn]:.2f} s, '
       f'panel (b) at +{d["t"][frames[1][0]] - d["t"][iOn]:.2f} s, '
